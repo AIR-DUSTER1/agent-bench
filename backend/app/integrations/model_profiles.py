@@ -19,21 +19,37 @@ class ModelProfile:
 
 
 _PROFILES: tuple[tuple[str, ModelProfile], ...] = (
-    # 顺序即优先级：先命中的家族生效
+    # OpenAI 系：o 系与 gpt-5 只接受默认 temperature；gpt-4 及更早无思考参数
     (r"^o\d", ModelProfile("openai-o", "reasoning_effort", supports_temperature=False)),
     (r"^gpt-5", ModelProfile("openai-gpt5", "reasoning_effort", supports_temperature=False)),
     (r"^gpt-", ModelProfile("openai-gpt4", "none")),
+    # 国产主流
     (r"deepseek", ModelProfile("deepseek", "reasoning_effort")),
+    (r"qwen|qwq|qvq", ModelProfile("qwen", "enable_thinking")),  # 注意：enable_thinking 在部分 Qwen3 通道仅流式可用
+    (r"glm|chatglm|zhipu", ModelProfile("glm", "thinking_type")),
+    (r"doubao", ModelProfile("doubao", "thinking_type")),  # 火山方舟兼容层支持 thinking.type
+    (r"ernie", ModelProfile("ernie", "none")),
+    (r"hunyuan", ModelProfile("hunyuan", "none")),
+    (r"moonshot|kimi", ModelProfile("moonshot", "none")),  # Kimi 思考由模型变体决定（k2-thinking 等）
+    (r"minimax|abab", ModelProfile("minimax", "none")),
+    (r"spark", ModelProfile("spark", "none")),
+    (r"baichuan", ModelProfile("baichuan", "none")),
+    (r"^yi-", ModelProfile("yi", "none")),
+    (r"step-", ModelProfile("step", "none")),
+    (r"internlm", ModelProfile("internlm", "none")),
+    (r"minicpm", ModelProfile("minicpm", "none")),
+    # 海外
     (r"^gemini", ModelProfile("gemini", "reasoning_effort")),
     (r"grok", ModelProfile("grok", "reasoning_effort")),
-    (r"qwen", ModelProfile("qwen", "enable_thinking")),
-    (r"^glm", ModelProfile("glm", "thinking_type")),
-    (r"claude", ModelProfile("claude", "none")),  # 思考由 Anthropic 原生 thinking budget 控制，兼容网关不通用
-    (r"kimi|moonshot", ModelProfile("kimi", "none")),
-    (r"doubao", ModelProfile("doubao", "none")),  # 豆包思考由接入点/模型版本决定
+    (r"claude", ModelProfile("claude", "none")),  # 思考由 Anthropic 原生 thinking budget 控制（见 llm._build_anthropic）
     (r"llama", ModelProfile("llama", "none")),
-    (r"mistral|magistral|ministral", ModelProfile("mistral", "none")),
+    (r"mistral|magistral|ministral|mixtral|pixtral", ModelProfile("mistral", "none")),
+    (r"command", ModelProfile("cohere", "none")),
+    (r"^gemma", ModelProfile("gemma", "none")),
+    (r"phi-", ModelProfile("phi", "none")),
+    (r"nova", ModelProfile("nova", "none")),
 )
+# 兜底画像：未登记家族不发思考参数（严格网关遇未知参数会 400），temperature 保持可配
 _UNKNOWN = ModelProfile("unknown", "none")
 
 

@@ -10,10 +10,17 @@ import type { Dimension, ModelEntryInfo, ModelProviderInfo, Settings } from '../
 // ---------- 供应商弹窗 ----------
 
 const API_FORMAT_LABELS: Record<string, string> = {
-  openai_chat: 'OpenAI Chat',
-  openai_responses: 'OpenAI Responses',
-  anthropic: 'Claude',
+  openai_chat: 'Chat Completions',
+  openai_responses: 'Responses',
+  anthropic: 'Anthropic Messages',
 }
+
+// 下拉选项带端点路径（与常见网关文档命名一致）
+const API_FORMAT_OPTIONS = [
+  { value: 'openai_chat', label: 'Chat Completions (/chat/completions)' },
+  { value: 'openai_responses', label: 'Responses (/responses)' },
+  { value: 'anthropic', label: 'Anthropic Messages (/v1/messages)' },
+]
 
 function ProviderModal({ open, initial, onClose }: {
   open: boolean
@@ -66,14 +73,8 @@ function ProviderModal({ open, initial, onClose }: {
           <Input placeholder="DeepSeek / OpenAI / 智谱 / 本地 vLLM…" />
         </Form.Item>
         <Form.Item name="api_format" label="接口类型" rules={[{ required: true }]}
-          extra="OpenAI Chat 适用于绝大多数供应商与本地网关；Responses 仅 OpenAI 官方；Claude 走 Anthropic Messages 协议">
-          <Select
-            options={[
-              { value: 'openai_chat', label: 'OpenAI Chat' },
-              { value: 'openai_responses', label: 'OpenAI Responses' },
-              { value: 'anthropic', label: 'Claude' },
-            ]}
-          />
+          extra="OpenAI Chat Completions 适用于绝大多数供应商与本地网关；Responses 仅 OpenAI 官方；Anthropic Messages 走 Claude 原生协议">
+          <Select options={API_FORMAT_OPTIONS} />
         </Form.Item>
         <Form.Item name="base_url" label="Base URL" rules={[{ required: true, message: '必填' }]}>
           <Input placeholder="https://api.deepseek.com" />
@@ -248,7 +249,7 @@ export default function System() {
   const providerColumns: TableColumnsType<ModelProviderInfo> = [
     { title: '名称', dataIndex: 'name' },
     {
-      title: '接口类型', dataIndex: 'api_format', width: 150,
+      title: '接口类型', dataIndex: 'api_format', width: 160,
       render: (f: string) => <Tag color={f === 'anthropic' ? 'orange' : f === 'openai_responses' ? 'purple' : 'blue'}>{API_FORMAT_LABELS[f] ?? f}</Tag>,
     },
     { title: 'Base URL', dataIndex: 'base_url', ellipsis: true },
