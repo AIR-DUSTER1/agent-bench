@@ -18,3 +18,6 @@ backend/data/
 .playwright-mcp/
 .setting/
 *.log
+
+# 前端（构建产物 dist 提交；node_modules 不提交）
+frontend/node_modules/

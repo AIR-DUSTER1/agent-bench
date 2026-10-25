@@ -256,9 +256,14 @@ def test_report_env_escapes_untrusted_content():
     assert out3.startswith("<svg")
 
 
-def test_console_html_escapes_agent_names():
-    """控制台对 agent 名的插值必须经 esc() 转义（防 onclick/属性逃逸）。"""
-    html = (Path(__file__).resolve().parents[1] / "app" / "static" / "index.html").read_text(encoding="utf-8")
-    # onclick 注入已改为 data-agent 属性 + esc 转义
-    assert "this.dataset.agent" in html
-    assert "JSON.stringify(JSON.stringify(a))" not in html
+def test_frontend_no_raw_html_injection():
+    """React 控制台安全守卫：源码不得使用 dangerouslySetInnerHTML（React 默认转义，
+    一旦绕过即失去这层防护）；构建产物必须存在（部署机免 Node 直接可用）。"""
+    fe = Path(__file__).resolve().parents[2] / "frontend" / "src"
+    assert fe.exists(), "frontend/src 不存在：前端工程被移动或删除，请同步本测试"
+    for py_tsx in fe.rglob("*.tsx"):
+        assert "dangerouslySetInnerHTML" not in py_tsx.read_text(encoding="utf-8"), (
+            f"{py_tsx.name} 使用了 dangerouslySetInnerHTML：不可信内容会被直接注入 DOM"
+        )
+    dist_index = Path(__file__).resolve().parents[1] / "app" / "static" / "dist" / "index.html"
+    assert dist_index.exists(), "dist/index.html 缺失：请在 frontend/ 下执行 npm run build"

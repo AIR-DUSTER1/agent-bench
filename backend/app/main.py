@@ -51,11 +51,34 @@ async def auth_middleware(request: Request, call_next):
 for r in (system, agents, datasets, dimensions, runs, governance):
     app.include_router(r.router)
 
-# 内置轻量控制台（M6）
+# 前端托管：优先 React 构建产物（frontend/ → static/dist，SPA 路由回退 index.html）；
+# dist 未构建时回退旧单文件控制台；两者都没有则给出构建提示。
 static_dir = BASE_DIR / "app" / "static"
-if static_dir.exists():
+dist_dir = static_dir / "dist"
+
+if dist_dir.exists():
+    assets_dir = dist_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        if full_path:
+            candidate = (dist_dir / full_path).resolve()
+            # 仅允许 dist 目录内的静态文件，防路径穿越
+            if candidate.is_file() and str(candidate).startswith(str(dist_dir.resolve())):
+                return FileResponse(candidate)
+        return FileResponse(dist_dir / "index.html")
+elif (static_dir / "index.html").exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.get("/", include_in_schema=False)
     def console():
         return FileResponse(static_dir / "index.html")
+else:
+
+    @app.get("/", include_in_schema=False)
+    def no_frontend():
+        return JSONResponse(
+            {"hint": "前端未构建：cd frontend && npm install && npm run build"}, status_code=503
+        )
