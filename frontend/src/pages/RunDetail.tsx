@@ -1,9 +1,12 @@
-import { App, Button, Card, Descriptions, Space, Spin, Table, Tabs, Tag, Typography, Alert } from 'antd'
+import { useState } from 'react'
+import {
+  App, Button, Card, Descriptions, Modal, Select, Space, Spin, Table, Tabs, Tag, Typography, Alert,
+} from 'antd'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, errText } from '../api'
-import type { EvalRun, RunTokens, TokenRow } from '../types'
+import type { CompareResult, DatasetListItem, EvalRun, RunTokens, TokenRow } from '../types'
 import { StatusTag, fmtTime } from '../format'
 import Chart from '../components/Chart'
 
@@ -129,6 +132,90 @@ function TokenPanel({ runId }: { runId: number }) {
   )
 }
 
+// 升级对比：选一个历史 run 作基线，按 case.input 对齐逐题对照（delta = 本 run - 基线）
+function ComparePanel({ runId }: { runId: number }) {
+  const [baselineId, setBaselineId] = useState<number | null>(null)
+  const { data: runs = [] } = useQuery({
+    queryKey: ['runs'],
+    queryFn: () => api.get<EvalRun[]>('/runs'),
+  })
+  const { data, isLoading } = useQuery({
+    queryKey: ['compare', baselineId, runId],
+    queryFn: () => api.get<CompareResult>(`/runs/${baselineId}/compare/${runId}`),
+    enabled: baselineId !== null,
+  })
+
+  return (
+    <>
+      <Space style={{ marginBottom: 12 }}>
+        <Typography.Text>基线任务（旧）：</Typography.Text>
+        <Select
+          style={{ width: 360 }}
+          placeholder="选择用于对比的历史评测任务"
+          value={baselineId ?? undefined}
+          onChange={(v) => setBaselineId(v)}
+          options={runs.filter((r) => r.id !== runId).map((r) => ({
+            value: r.id,
+            label: `#${r.id} ${r.name}（${r.status}）`,
+          }))}
+        />
+      </Space>
+      {data?.warning && <Alert type="warning" showIcon message={data.warning} style={{ marginBottom: 12 }} />}
+      {isLoading && <Spin />}
+      {data?.sides.map((s) => (
+        <Card
+          key={s.agent_version_id}
+          size="small"
+          title={`${s.agent_name}/${s.version} · 配对 ${s.paired} 题`}
+          style={{ marginBottom: 14 }}
+        >
+          <Space size="large" wrap style={{ marginBottom: 10 }}>
+            <Typography.Text>
+              基线均分 <Typography.Text strong>{s.summary.a_mean ?? '-'}</Typography.Text>
+              {' → '}本 run 均分 <Typography.Text strong>{s.summary.b_mean ?? '-'}</Typography.Text>
+            </Typography.Text>
+            <Typography.Text>
+              变化 <Typography.Text type={s.summary.delta_mean === null ? 'secondary' : s.summary.delta_mean > 0 ? 'success' : s.summary.delta_mean < 0 ? 'danger' : 'secondary'}>
+                {s.summary.delta_mean === null ? '-' : (s.summary.delta_mean > 0 ? '+' : '') + s.summary.delta_mean}
+              </Typography.Text>
+            </Typography.Text>
+            <Typography.Text>
+              <Tag color="green">升 {s.summary.win}</Tag>
+              <Tag>平 {s.summary.tie}</Tag>
+              <Tag color="red">降 {s.summary.loss}</Tag>
+            </Typography.Text>
+            {s.summary.significance && (
+              <Typography.Text type="secondary">
+                显著性：{s.summary.significance.method} · p = {s.summary.significance.p ?? '样本不足'}
+                {s.summary.significance.p != null && (s.summary.significance.p < 0.05 ? '（显著）' : '（不显著）')}
+              </Typography.Text>
+            )}
+          </Space>
+          <Table
+            rowKey="input"
+            size="small"
+            pagination={{ pageSize: 10 }}
+            dataSource={s.rows}
+            columns={[
+              { title: 'input', dataIndex: 'input', ellipsis: true },
+              { title: '基线得分', dataIndex: 'a_score', width: 90, render: (v: number | null) => v ?? '-' },
+              { title: '本 run', dataIndex: 'b_score', width: 90, render: (v: number | null) => v ?? '-' },
+              {
+                title: 'Δ', dataIndex: 'delta', width: 80,
+                render: (v: number | null) => v === null ? '-' : (
+                  <Typography.Text type={v > 0 ? 'success' : v < 0 ? 'danger' : 'secondary'}>
+                    {v > 0 ? '+' : ''}{v}
+                  </Typography.Text>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      ))}
+    </>
+  )
+}
+
 export default function RunDetail() {
   const { id } = useParams()
   const runId = Number(id)
@@ -154,6 +241,24 @@ export default function RunDetail() {
     mutationFn: () => api.post(`/runs/${runId}/cancel`, {}),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['run', runId] }),
     onError: (e) => message.error(errText(e), 6),
+  })
+
+  // 复评：继承本 run 全部配置，只换数据集版本
+  const [replayOpen, setReplayOpen] = useState(false)
+  const [replayDs, setReplayDs] = useState<number | null>(null)
+  const { data: datasets = [] } = useQuery({
+    queryKey: ['datasets'],
+    queryFn: () => api.get<DatasetListItem[]>('/datasets'),
+    enabled: replayOpen,
+  })
+  const replayMut = useMutation({
+    mutationFn: () => api.post<{ id: number }>(`/runs/${runId}/replay`, { dataset_version_id: replayDs }),
+    onSuccess: (r) => {
+      message.success(`已创建复评 Run #${r.id}`)
+      setReplayOpen(false)
+      navigate(`/runs/${r.id}`)
+    },
+    onError: (e) => message.error('复评失败：' + errText(e), 6),
   })
 
   if (isLoading || !run) return <Spin />
@@ -209,13 +314,40 @@ export default function RunDetail() {
         {TERMINAL.includes(run.status)
           ? <Button onClick={() => retryMut.mutate()}>重跑</Button>
           : <Button danger onClick={() => cancelMut.mutate()}>取消任务</Button>}
+        <Button type="primary" ghost onClick={() => setReplayOpen(true)}>复评（换数据集）</Button>
       </Space>
+
+      <Modal
+        title="复评：以本任务为模板，换用新数据集版本"
+        open={replayOpen}
+        okText="发起复评"
+        cancelText="取消"
+        okButtonProps={{ disabled: replayDs === null }}
+        confirmLoading={replayMut.isPending}
+        onCancel={() => setReplayOpen(false)}
+        onOk={() => replayMut.mutate()}
+      >
+        <Typography.Paragraph type="secondary">
+          继承本任务的 Agent 版本、并发与 Judge 配置；用于数据集升级后的对照验证。
+        </Typography.Paragraph>
+        <Select
+          style={{ width: '100%' }}
+          placeholder="选择已发布的数据集版本"
+          value={replayDs ?? undefined}
+          onChange={(v) => setReplayDs(v)}
+          options={datasets.flatMap((d) =>
+            d.versions.map((v) => ({ value: v.id, label: `${d.name} · ${v.version}（${v.case_count}）` })),
+          )}
+          showSearch
+        />
+      </Modal>
 
       <Card size="small" title={`Run #${run.id} · ${run.name}`}>
         <Tabs
           items={[
             { key: 'overview', label: '概览', children: overview },
             { key: 'tokens', label: 'Token 消耗', children: <TokenPanel runId={runId} /> },
+            { key: 'compare', label: '升级对比', children: <ComparePanel runId={runId} /> },
           ]}
         />
       </Card>

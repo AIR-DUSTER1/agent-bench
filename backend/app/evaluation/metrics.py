@@ -154,6 +154,11 @@ def paired_t_test(diffs: list[float]) -> dict:
     return {"n": n, "t": round(t, 4), "p": round(p, 4), "method": "paired_t"}
 
 
+def significance(diffs: list[float]) -> dict:
+    """显著性检验选型（唯一口径）：n>=8 用配对 t，否则 Wilcoxon 符号秩。"""
+    return paired_t_test(diffs) if len(diffs) >= 8 else wilcoxon_test(diffs)
+
+
 def wilcoxon_test(diffs: list[float]) -> dict:
     """Wilcoxon 符号秩检验（正态近似），样本少时使用。"""
     nonzero = [d for d in diffs if d != 0]
@@ -288,7 +293,7 @@ def ab_compare(
             l += sb < sa
         overall_diffs.extend(diffs)
         win, tie, loss = win + w, tie + t, loss + l
-        test = paired_t_test(diffs) if len(diffs) >= 8 else wilcoxon_test(diffs)
+        test = significance(diffs)
         dim_detail[code] = {
             "mean_diff": round(mean(diffs), 3) if diffs else None,
             "win": w, "tie": t, "loss": l,

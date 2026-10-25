@@ -87,6 +87,12 @@ class RunCreate(BaseModel):
     concurrency: int | None = None  # 缺省回落 settings.EXEC_CONCURRENCY
 
 
+class ReplayIn(BaseModel):
+    """以既有 run 为模板复评：只换数据集版本，其余配置（Agent/并发/Judge）继承。"""
+    dataset_version_id: int
+    name: str | None = None
+
+
 # ---------- 标签 ----------
 class TagCreate(BaseModel):
     category: str

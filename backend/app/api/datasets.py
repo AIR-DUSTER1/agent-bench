@@ -227,7 +227,7 @@ def publish(ds_id: int, body: PublishIn, db: Session = Depends(get_db)) -> dict:
     summary = _run_quality(db, ds, draft)
     if summary["blockers"] > 0:
         raise HTTPException(409, {"message": "存在阻断问题，须修复后发布", "quality": summary})
-    nums = [int(v.version.lstrip("v")) for v in (x.version for x in ds.versions) if v.version != "draft"]
+    nums = [int(v.version.lstrip("v")) for v in ds.versions if v.version != "draft"]
     new_ver = f"v{max(nums, default=0) + 1}"
     snap = DatasetVersion(
         dataset_id=ds.id, version=new_ver, note=body.note,

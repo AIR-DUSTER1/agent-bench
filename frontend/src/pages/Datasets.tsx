@@ -190,7 +190,7 @@ export default function Datasets() {
     enabled: diffOpen && diffA !== null && diffB !== null,
   })
   const versionOptions = [
-    ...(viewDetail ? [{ value: viewDetail.draft.id, label: `草稿（${viewDetail.draft.case_count}）` }] : []),
+    ...(viewDetail ? [{ value: viewDetail.draft.id, label: `草稿（${viewDetail.draft.cases?.length ?? viewDetail.draft.case_count}）` }] : []),
     ...(viewDetail?.versions ?? []).map((v) => ({ value: v.id, label: `${v.version}（${v.case_count}）` })),
   ]
 
@@ -350,7 +350,7 @@ export default function Datasets() {
             value={viewVersionId ?? undefined}
             onChange={(v) => setViewVersionId(v)}
             options={[
-              ...(viewDetail ? [{ value: 'draft' as const, label: `草稿（${viewDetail.draft.case_count}）` }] : []),
+              ...(viewDetail ? [{ value: 'draft' as const, label: `草稿（${viewDetail.draft.cases?.length ?? viewDetail.draft.case_count}）` }] : []),
               ...(viewDetail?.versions ?? []).map((v) => ({ value: v.id, label: `${v.version}（${v.case_count}）` })),
             ]}
           />

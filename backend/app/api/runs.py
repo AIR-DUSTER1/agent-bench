@@ -8,12 +8,16 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from statistics import mean
+
 from app.core.config import settings
 from app.core.db import get_db
-from app.evaluation.metrics import normalize_usage, sum_usage
+from app.evaluation.metrics import normalize_usage, significance, sum_usage
 from app.evaluation.pipeline import cancel_run, start_run
-from app.models import Agent, AgentVersion, CaseResult, DatasetVersion, EvalRun, Report, RunStatus
-from app.schemas import RunCreate
+from app.models import (
+    Agent, AgentVersion, CaseResult, DatasetVersion, Dimension, EvalCase, EvalRun, Report, RunStatus,
+)
+from app.schemas import ReplayIn, RunCreate
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -173,6 +177,101 @@ def get_run_tokens(run_id: int, db: Session = Depends(get_db)) -> dict:
         "rows": rows,
         "agent_total": sum_usage(agent_raw),
         "judge_total": sum_usage(judge_raw),
+    }
+
+
+@router.post("/{run_id}/replay", status_code=201)
+def replay_run(run_id: int, body: ReplayIn, background: BackgroundTasks, db: Session = Depends(get_db)) -> dict:
+    """升级验证：以既有 run 为模板（同 Agent 版本/并发/Judge），换数据集版本一键复评。"""
+    r = db.get(EvalRun, run_id)
+    if not r:
+        raise HTTPException(404, "任务不存在")
+    dsv = db.get(DatasetVersion, body.dataset_version_id)
+    if not dsv or dsv.version == "draft":
+        raise HTTPException(400, "dataset_version_id 必须是已发布版本（draft 不可评测）")
+    run = EvalRun(
+        name=body.name or f"{r.name} · 复评",
+        mode=r.mode,
+        agent_version_ids=r.agent_version_ids,
+        dataset_version_id=body.dataset_version_id,
+        judge_model=settings.judge_model,
+        judge_mode=r.judge_mode,
+        dimension_codes=r.dimension_codes,
+        concurrency=r.concurrency,
+    )
+    db.add(run)
+    db.commit()
+    background.add_task(start_run, run.id)
+    return {"id": run.id, "mode": run.mode}
+
+
+def _weighted_score(scores: list, weight_by: dict[str, float]) -> float | None:
+    """单样本加权总分（score=-1 的维度视为缺失，不参与）。"""
+    valid = [(s.score, weight_by.get(s.dimension_code, 1.0)) for s in scores if s.score >= 0]
+    if not valid:
+        return None
+    return sum(v * w for v, w in valid) / sum(w for _, w in valid)
+
+
+@router.get("/{run_id}/compare/{other_id}")
+def compare_runs(run_id: int, other_id: int, db: Session = Depends(get_db)) -> dict:
+    """双 run 逐样本对比（升级验证）：以 case.input 对齐，按被测侧分组输出得分变化与显著性。"""
+    ra, rb = db.get(EvalRun, run_id), db.get(EvalRun, other_id)
+    if not ra or not rb:
+        raise HTTPException(404, "任务不存在")
+    weight_by = {d.code: d.weight for d in db.execute(select(Dimension)).scalars()}
+
+    def side_scores(run: EvalRun) -> dict[int, dict[str, float | None]]:
+        out: dict[int, dict[str, float | None]] = {}
+        rows = db.execute(
+            select(CaseResult, EvalCase)
+            .join(EvalCase, CaseResult.case_id == EvalCase.id)
+            .where(CaseResult.run_id == run.id)
+        ).all()
+        for res, case in rows:
+            out.setdefault(res.agent_version_id, {})[case.input] = _weighted_score(res.scores, weight_by)
+        return out
+
+    sa, sb = side_scores(ra), side_scores(rb)
+    agent_map = {a.id: a for a in db.execute(select(Agent)).scalars()}
+
+    sides = []
+    for av_id in json.loads(ra.agent_version_ids or "[]"):
+        av = db.get(AgentVersion, av_id)
+        a = agent_map.get(av.agent_id) if av else None
+        map_a, map_b = sa.get(av_id, {}), sb.get(av_id, {})
+        common = sorted(set(map_a) & set(map_b))
+        rows = [{
+            "input": i,
+            "a_score": map_a[i], "b_score": map_b[i],
+            "delta": (map_b[i] - map_a[i]) if map_a[i] is not None and map_b[i] is not None else None,
+        } for i in common]
+        diffs = [r["delta"] for r in rows if r["delta"] is not None]
+        a_vals = [map_a[i] for i in common if map_a[i] is not None]
+        b_vals = [map_b[i] for i in common if map_b[i] is not None]
+        sides.append({
+            "agent_version_id": av_id,
+            "agent_name": a.name if a else "?",
+            "version": av.version if av else "?",
+            "paired": len(common),
+            "rows": rows,
+            "summary": {
+                "a_mean": round(mean(a_vals), 3) if a_vals else None,
+                "b_mean": round(mean(b_vals), 3) if b_vals else None,
+                "delta_mean": round(mean(diffs), 3) if diffs else None,
+                "win": sum(1 for d in diffs if d > 0),
+                "tie": sum(1 for d in diffs if d == 0),
+                "loss": sum(1 for d in diffs if d < 0),
+                "significance": significance(diffs) if diffs else None,
+            },
+        })
+
+    return {
+        "a": {"run_id": ra.id, "name": ra.name, "dataset_version_id": ra.dataset_version_id},
+        "b": {"run_id": rb.id, "name": rb.name, "dataset_version_id": rb.dataset_version_id},
+        # 模板一致性提示：被测 Agent 不同则对比结论只具参考性
+        "warning": None if ra.agent_version_ids == rb.agent_version_ids else "两个 run 的被测 Agent 配置不同，对比仅供参考",
+        "sides": sides,
     }
 
 

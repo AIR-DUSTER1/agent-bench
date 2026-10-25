@@ -243,3 +243,36 @@ export interface TokenStats {
   by_agent: StatsEntry[]
   by_date: StatsEntry[]
 }
+
+// ---------- 升级验证（replay + 双 run 对比） ----------
+
+export interface CompareRow {
+  input: string
+  a_score: number | null
+  b_score: number | null
+  delta: number | null
+}
+
+export interface CompareSide {
+  agent_version_id: number
+  agent_name: string
+  version: string
+  paired: number
+  rows: CompareRow[]
+  summary: {
+    a_mean: number | null
+    b_mean: number | null
+    delta_mean: number | null
+    win: number
+    tie: number
+    loss: number
+    significance: { n: number; method: string; p: number | null; t?: number | null; w?: number | null } | null
+  }
+}
+
+export interface CompareResult {
+  a: { run_id: number; name: string; dataset_version_id: number }
+  b: { run_id: number; name: string; dataset_version_id: number }
+  warning: string | null
+  sides: CompareSide[]
+}
