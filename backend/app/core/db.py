@@ -31,7 +31,26 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """建表（幂等）。导入 app.models 触发全部模型注册后再 create_all。"""
+    """建表（幂等）+ 轻量加列迁移（幂等）。导入 app.models 触发全部模型注册后再 create_all。"""
     from app import models  # noqa: F401  确保模型全部注册
 
     models.Base.metadata.create_all(engine)
+    _ensure_columns(
+        engine,
+        "case_result",
+        {"judge_usage": "TEXT DEFAULT '{}'"},
+    )
+
+
+def _ensure_columns(target_engine, table: str, columns: dict[str, str]) -> None:
+    """对既有库补加新列（create_all 不会改老表）。SQLite/MySQL 通用。"""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(target_engine)
+    if table not in inspector.get_table_names():
+        return
+    existing = {c["name"] for c in inspector.get_columns(table)}
+    with target_engine.begin() as conn:
+        for name, ddl in columns.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))

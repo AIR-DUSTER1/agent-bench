@@ -8,9 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.agents.base import AgentOutput, BaseAgent
 from app.agents.retrieval import BM25Store, load_kb
-from app.integrations.llm import build_llm
-
-from langchain_core.output_parsers import StrOutputParser
+from app.integrations.llm import build_llm, extract_usage
 
 DEFAULT_KB_DIR = Path(__file__).resolve().parents[3] / "seed" / "kb"
 
@@ -43,9 +41,10 @@ class RagAgent(BaseAgent):
         t0 = time.perf_counter()
         hits = self.store.search(case_input, k=self.top_k)
         context = "\n\n".join(f"【{h['title']}】\n{h['text']}" for h, _s in hits) or "（未检索到任何资料）"
-        chain = ChatPromptTemplate.from_template(PROMPT) | self.llm | StrOutputParser()
+        chain = ChatPromptTemplate.from_template(PROMPT) | self.llm
         try:
-            out = await chain.ainvoke({"context": context, "question": case_input})
+            resp = await chain.ainvoke({"context": context, "question": case_input})
+            out = resp.content if isinstance(resp.content, str) else str(resp.content)
             inter = [{
                 "type": "retrieval",
                 "query": case_input,
@@ -55,7 +54,11 @@ class RagAgent(BaseAgent):
             return AgentOutput(
                 output=out,
                 intermediate=inter,
-                token_usage={"input_chars": len(context) + len(case_input), "output_chars": len(out)},
+                token_usage={
+                    **extract_usage(resp),
+                    "input_chars": len(context) + len(case_input),
+                    "output_chars": len(out),
+                },
                 latency_ms=int((time.perf_counter() - t0) * 1000),
                 raw={"kb_docs": len(self.store.docs), "kb_dir": self._loaded_from},
             )

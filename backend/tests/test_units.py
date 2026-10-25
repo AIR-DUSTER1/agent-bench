@@ -7,11 +7,14 @@ from pathlib import Path
 
 from app.agents.retrieval import BM25Store, tokenize
 from app.attribution.engine import analyze_case, detect_prompt_injection, summarize_findings
-from app.evaluation.judge import _extract_json
-from app.evaluation.metrics import aggregate, ab_compare, paired_t_test, wilcoxon_test
+from app.evaluation.judge import _add_usage, _extract_json
+from app.evaluation.metrics import (
+    aggregate, ab_compare, normalize_usage, paired_t_test, sum_usage, wilcoxon_test,
+)
 from app.evaluation.pipeline import start_run
 from app.evaluation.rubrics import BUILTIN_DIMENSIONS
 from app.governance.quality import check_dataset, summarize
+from app.integrations.llm import extract_usage
 
 
 def test_start_run_must_be_async():
@@ -267,3 +270,65 @@ def test_frontend_no_raw_html_injection():
         )
     dist_index = Path(__file__).resolve().parents[1] / "app" / "static" / "dist" / "index.html"
     assert dist_index.exists(), "dist/index.html 缺失：请在 frontend/ 下执行 npm run build"
+
+
+# ---------- M2：token 用量口径 ----------
+
+class _FakeResp:
+    def __init__(self, um):
+        self.usage_metadata = um
+
+
+def test_extract_usage_from_message():
+    """extract_usage：取 usage_metadata 并统一键名；缺失时返回空 dict（不得硬造）。"""
+    resp = _FakeResp({"input_tokens": 12, "output_tokens": 34, "total_tokens": 46})
+    assert extract_usage(resp) == {"input_tokens": 12, "output_tokens": 34, "total_tokens": 46}
+    assert extract_usage(_FakeResp(None)) == {}
+    assert extract_usage(object()) == {}
+    partial = extract_usage(_FakeResp({"input_tokens": 7}))
+    assert partial == {"input_tokens": 7}
+
+
+def test_normalize_usage_calibers():
+    """三种键名约定都归一为 api 口径；仅字符数 → approx_chars；空 → none。"""
+    assert normalize_usage({"input_tokens": 10, "output_tokens": 5})["source"] == "api"
+    assert normalize_usage({"input": 10, "output": 5})["total_tokens"] == 15
+    assert normalize_usage({"prompt_tokens": 7, "completion_tokens": 3})["input_tokens"] == 7
+    n = normalize_usage({"input_chars": 100, "output_chars": 50})
+    assert n["source"] == "approx_chars" and n["total_tokens"] == 0
+    assert n["input_chars"] == 100
+    assert normalize_usage({})["source"] == "none"
+    assert normalize_usage(None)["source"] == "none"
+
+
+def test_sum_usage_mixed_sources_not_mixed():
+    """聚合只累加 api 精确值；approx/none 只计数——不同口径不混算。"""
+    total = sum_usage([
+        {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+        {"input": 100, "output": 50},
+        {"input_chars": 99, "output_chars": 1},
+        {},
+        None,
+    ])
+    assert (total["input_tokens"], total["output_tokens"], total["total_tokens"]) == (110, 55, 165)
+    assert (total["api_calls"], total["approx_calls"], total["none_calls"], total["calls"]) == (2, 1, 2, 5)
+
+
+def test_judge_add_usage_accumulates():
+    acc = _add_usage({"input_tokens": 5, "output_tokens": 2}, {"input_tokens": 6, "total_tokens": 9})
+    assert acc["input_tokens"] == 11 and acc["output_tokens"] == 2 and acc["total_tokens"] == 9
+
+
+def test_ensure_columns_migration_idempotent():
+    """加列迁移对缺列库补列、重复执行不报错（SQLite/MySQL 通用实现）。"""
+    from sqlalchemy import create_engine, inspect, text
+
+    from app.core.db import _ensure_columns
+
+    eng = create_engine("sqlite:///:memory:")
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE case_result (id INTEGER PRIMARY KEY)"))
+    _ensure_columns(eng, "case_result", {"judge_usage": "TEXT DEFAULT '{}'"})
+    _ensure_columns(eng, "case_result", {"judge_usage": "TEXT DEFAULT '{}'"})
+    cols = {c["name"] for c in inspect(eng).get_columns("case_result")}
+    assert "judge_usage" in cols

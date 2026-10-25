@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.db import get_db
+from app.evaluation.metrics import normalize_usage, sum_usage
 from app.evaluation.pipeline import cancel_run, start_run
-from app.models import Agent, AgentVersion, DatasetVersion, EvalRun, Report, RunStatus
+from app.models import Agent, AgentVersion, CaseResult, DatasetVersion, EvalRun, Report, RunStatus
 from app.schemas import RunCreate
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -82,6 +83,11 @@ def get_run(run_id: int, db: Session = Depends(get_db)) -> dict:
         rep = db.execute(select(Report).where(Report.run_id == run_id)).scalars().first()
         if rep:
             out["report_id"] = rep.id
+    results = db.execute(select(CaseResult).where(CaseResult.run_id == run_id)).scalars().all()
+    out["token_summary"] = {
+        "agent": sum_usage(json.loads(x.token_usage or "{}") for x in results),
+        "judge": sum_usage(json.loads(x.judge_usage or "{}") for x in results),
+    }
     return out
 
 
@@ -136,6 +142,38 @@ def get_report_html(run_id: int, db: Session = Depends(get_db)) -> FileResponse:
     if not rep or not rep.html_path:
         raise HTTPException(404, "报告尚未生成")
     return FileResponse(rep.html_path, media_type="text/html")
+
+
+@router.get("/{run_id}/tokens")
+def get_run_tokens(run_id: int, db: Session = Depends(get_db)) -> dict:
+    """单次评测的 token 统计：逐样本明细（被测 + Judge 分列）与汇总。"""
+    r = db.get(EvalRun, run_id)
+    if not r:
+        raise HTTPException(404, "任务不存在")
+    results = db.execute(
+        select(CaseResult).where(CaseResult.run_id == run_id).order_by(CaseResult.id)
+    ).scalars().all()
+    agent_map = {a.id: a for a in db.execute(select(Agent)).scalars()}
+    av_map = {av.id: av for av in db.execute(select(AgentVersion)).scalars()}
+    rows, agent_raw, judge_raw = [], [], []
+    for res in results:
+        av = av_map.get(res.agent_version_id)
+        agent_u = normalize_usage(json.loads(res.token_usage or "{}"))
+        judge_u = normalize_usage(json.loads(res.judge_usage or "{}"))
+        agent_raw.append(json.loads(res.token_usage or "{}"))
+        judge_raw.append(json.loads(res.judge_usage or "{}"))
+        a = agent_map.get(av.agent_id) if av else None
+        rows.append({
+            "case_result_id": res.id, "seq": res.seq, "status": res.status,
+            "agent_name": a.name if a else "?", "agent_version": av.version if av else "?",
+            "usage": agent_u, "judge_usage": judge_u,
+        })
+    return {
+        "run_id": run_id,
+        "rows": rows,
+        "agent_total": sum_usage(agent_raw),
+        "judge_total": sum_usage(judge_raw),
+    }
 
 
 def _latest_report(db: Session, run_id: int) -> Report | None:

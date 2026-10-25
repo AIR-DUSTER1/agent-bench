@@ -6,6 +6,9 @@
 - 通过率        全部启用维度得分均 ≥ PASS_THRESHOLD 的样本占比（执行失败样本计为不通过）
 - 幻觉率        hallucination 维度得分 ≤ 2 的样本占比（分越高幻觉越少）
 - P95 延迟      样本延迟的 95 分位
+- token 口径    normalize_usage 归一为 {input_tokens, output_tokens, total_tokens, source}；
+                source ∈ api(模型精确上报) / approx_chars(仅字符数近似) / none(未上报)。
+                聚合（sum_usage）只累加 api 精确值——不同 source 的数字不混算，避免假精确。
 """
 from __future__ import annotations
 
@@ -13,6 +16,57 @@ import math
 from statistics import mean, median
 
 from app.core.config import settings
+
+
+# ---------- token 用量口径 ----------
+
+def _num(u: dict, *keys: str) -> int | None:
+    for k in keys:
+        v = u.get(k)
+        if isinstance(v, (int, float)):
+            return int(v)
+    return None
+
+
+def normalize_usage(u: dict | None) -> dict:
+    """把各采集点的用量 dict 归一为统一口径。
+
+    兼容三种键名：langchain usage_metadata（input_tokens/...）、
+    本项目早期约定（input/output）、OpenAI 风格（prompt_tokens/completion_tokens）。
+    """
+    u = u or {}
+    inp = _num(u, "input_tokens", "input", "prompt_tokens")
+    out = _num(u, "output_tokens", "output", "completion_tokens")
+    if inp is not None and out is not None:
+        total = _num(u, "total_tokens", "total")
+        return {"input_tokens": inp, "output_tokens": out,
+                "total_tokens": total if total is not None else inp + out,
+                "source": "api"}
+    if _num(u, "input_chars") is not None or _num(u, "output_chars") is not None:
+        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+                "source": "approx_chars",
+                "input_chars": _num(u, "input_chars") or 0,
+                "output_chars": _num(u, "output_chars") or 0}
+    return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "source": "none"}
+
+
+def sum_usage(usages: list[dict | None]) -> dict:
+    """聚合多条用量：token 数只累加 api 精确上报；approx/none 仅计数，不产生假精确数字。"""
+    out = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+           "calls": 0, "api_calls": 0, "approx_calls": 0, "none_calls": 0}
+    for raw in usages or []:
+        n = normalize_usage(raw)
+        out["calls"] += 1
+        if n["source"] == "api":
+            out["api_calls"] += 1
+            out["input_tokens"] += n["input_tokens"]
+            out["output_tokens"] += n["output_tokens"]
+            out["total_tokens"] += n["total_tokens"]
+        elif n["source"] == "approx_chars":
+            out["approx_calls"] += 1
+        else:
+            out["none_calls"] += 1
+    return out
 
 
 # ---------- 基础分布 ----------

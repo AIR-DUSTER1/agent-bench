@@ -83,6 +83,8 @@ class CaseResult(Base):
     intermediate: Mapped[str] = mapped_column(Text, default="[]")
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     token_usage: Mapped[str] = mapped_column(Text, default="{}")
+    # Judge（阅卷 LLM）的 token 用量 JSON：{"input_tokens","output_tokens","total_tokens"}
+    judge_usage: Mapped[str] = mapped_column(Text, default="{}")
     trace_id: Mapped[str] = mapped_column(String(128), default="")
     # 断点续跑用阶段标记：executed | judged
     stage: Mapped[str] = mapped_column(String(16), default="pending")

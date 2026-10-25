@@ -232,7 +232,7 @@ async def _score_phase(db, ctx: RunContext) -> None:
             "intermediate": _j(res.intermediate, []),
         }
         async with judge_sem:
-            scores = await judge.judge_case(
+            scores, judge_usage = await judge.judge_case(
                 case=case_flat, output=res.output, run_id=ctx.run.id,
                 case_key=f"{res.agent_version_id}_{res.seq}",
             )
@@ -247,6 +247,7 @@ async def _score_phase(db, ctx: RunContext) -> None:
                 score=s["score"], rationale=s["rationale"],
                 evidence=s["evidence"], error=s["error"],
             ))
+        res.judge_usage = json.dumps(judge_usage, ensure_ascii=False)
         res.stage = "judged"
         db.commit()
 

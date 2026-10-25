@@ -1,6 +1,8 @@
 """LLM 工厂：统一从配置构建被测模型与 Judge 模型（OpenAI 兼容协议）。"""
 from __future__ import annotations
 
+from typing import Any
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
@@ -36,3 +38,17 @@ def build_judge_llm() -> BaseChatModel:
         timeout=300,
         model_kwargs={"response_format": {"type": "json_object"}},
     )
+
+
+def extract_usage(resp: Any) -> dict:
+    """从 LLM 响应（AIMessage 等）提取 token 用量，统一键名 input_tokens/output_tokens/total_tokens。
+    模型未上报时返回 {}，由 metrics.normalize_usage 降级处理（不得硬造数字）。"""
+    um = getattr(resp, "usage_metadata", None)
+    if not isinstance(um, dict):
+        return {}
+    out: dict[str, int] = {}
+    for k in ("input_tokens", "output_tokens", "total_tokens"):
+        v = um.get(k)
+        if isinstance(v, (int, float)):
+            out[k] = int(v)
+    return out

@@ -11,8 +11,16 @@ import re
 
 from app.core.config import settings
 from app.evaluation.rubrics import RUBRIC_SCALE
-from app.integrations.llm import build_judge_llm
+from app.integrations.llm import build_judge_llm, extract_usage
 from app.integrations.tracing import record_trace
+
+
+def _add_usage(a: dict, b: dict) -> dict:
+    """累加多次 judge 调用的 token 用量（仅 api 上报键，其余忽略）。"""
+    out = dict(a)
+    for k in ("input_tokens", "output_tokens", "total_tokens"):
+        out[k] = int(out.get(k, 0)) + int(b.get(k, 0) or 0)
+    return out
 
 SYSTEM_TMPL = """你是严格、公正的 AI 评测专家（LLM-as-Judge）。请对下方「待评回答」按给定的评测维度逐维打分。
 
@@ -85,8 +93,8 @@ class Judge:
 
     async def judge_case(
         self, *, case: dict, output: str, run_id: int = 0, case_key: str = ""
-    ) -> list[dict]:
-        """返回 [{code, score, rationale, evidence, error}]。"""
+    ) -> tuple[list[dict], dict]:
+        """返回 ([{code, score, rationale, evidence, error}], judge token 用量 dict)。"""
         user_msg = USER_TMPL.format(
             input=case.get("input", ""),
             expected=case.get("expected_output") or "（无）",
@@ -96,12 +104,18 @@ class Judge:
         )
         if self.mode == "per_dimension":
             results: list[dict] = []
+            usage_sum: dict = {}
             for d in self.dims:
-                results.append(await self._call([d], user_msg, run_id, case_key, d["code"]))
-            return results
-        return self._split(await self._call(self.dims, user_msg, run_id, case_key, "all"))
+                scores_d, usage_d = await self._call([d], user_msg, run_id, case_key, d["code"])
+                results.append(scores_d)
+                usage_sum = _add_usage(usage_sum, usage_d)
+            return results, usage_sum
+        scores, usage = await self._call(self.dims, user_msg, run_id, case_key, "all")
+        return self._split(scores), usage
 
-    async def _call(self, dims: list[dict], user_msg: str, run_id: int, case_key: str, tag: str) -> dict:
+    async def _call(
+        self, dims: list[dict], user_msg: str, run_id: int, case_key: str, tag: str
+    ) -> tuple[dict, dict]:
         last_err = ""
         for attempt in range(settings.JUDGE_MAX_RETRIES + 1):
             try:
@@ -116,10 +130,11 @@ class Judge:
                     name="llm-as-judge", input_data={"prompt_tail": user_msg[-500:], "tag": tag},
                     output_data=scores, tags=["judge", tag],
                 )
-                return scores
+                # 用量取成功那次尝试；模型未上报时为 {}，由 normalize_usage 归为 none
+                return scores, extract_usage(resp)
             except Exception as e:  # noqa: BLE001
                 last_err = f"{type(e).__name__}: {e}"
-        return {"__error__": last_err}
+        return {"__error__": last_err}, {}
 
     def _split(self, scores: dict) -> list[dict]:
         if "__error__" in scores:
