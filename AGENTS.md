@@ -125,7 +125,7 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 
 - Commit message：`类型: 中文描述`（feat/fix/refactor/docs/test/chore），正文写清动机与影响面（参考仓库首个 commit）。
 - 一次 commit 一件事；不把无关改动混入。
-- 提交前自检：`pytest` 全绿、`git status` 无意外文件、`git diff` 中无密钥与调试输出（print/临时日志）。
+- 提交前自检：`pytest` 全绿、`pyflakes app/ ../scripts/` 零告警、`git status` 无意外文件、`git diff` 中无密钥与调试输出（print/临时日志）。
 - 需要新增依赖时：在 commit/PR 说明里写明用途与为什么现有依赖不够。
 
 ## 8. 常见任务正确姿势（速查）

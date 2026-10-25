@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import agents, datasets, dimensions, governance, runs, system
+from app.bootstrap import seed_builtin_data
 from app.core.config import BASE_DIR, settings
 from app.core.db import init_db
 
@@ -19,6 +20,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    seed_builtin_data()
     yield
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,11 +11,23 @@ from app.models.base import Base, TimestampMixin, utcnow
 
 # single | ab
 RUN_MODES = ("single", "ab")
-# pending|loading|executing|scoring|attributing|reporting|done|failed|cancelled
-RUN_STATUS = (
-    "pending", "loading", "executing", "scoring", "attributing", "reporting",
-    "done", "failed", "cancelled",
-)
+
+
+class RunStatus(str, Enum):
+    """评测任务状态机（唯一权威定义，流水线/路由一律引用本枚举）。"""
+    PENDING = "pending"
+    LOADING = "loading"
+    EXECUTING = "executing"
+    SCORING = "scoring"
+    ATTRIBUTING = "attributing"
+    REPORTING = "reporting"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+# 兼容引用：状态取值全集
+RUN_STATUS = tuple(s.value for s in RunStatus)
 
 
 class Dimension(TimestampMixin, Base):

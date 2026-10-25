@@ -1,14 +1,22 @@
 """离线单元测试（不依赖真实 LLM）。运行：cd backend && python -m pytest tests -q"""
 from __future__ import annotations
 
+import inspect
 import math
 
 from app.agents.retrieval import BM25Store, tokenize
 from app.attribution.engine import analyze_case, detect_prompt_injection, summarize_findings
 from app.evaluation.judge import _extract_json
 from app.evaluation.metrics import aggregate, ab_compare, paired_t_test, wilcoxon_test
+from app.evaluation.pipeline import start_run
 from app.evaluation.rubrics import BUILTIN_DIMENSIONS
 from app.governance.quality import check_dataset, summarize
+
+
+def test_start_run_must_be_async():
+    """回归防护：start_run 若被改回同步 def，starlette 会丢线程池导致 RuntimeError:
+    no running event loop（已两次踩坑，见 AGENTS.md 与 pipeline 注释）。"""
+    assert inspect.iscoroutinefunction(start_run)
 
 
 def test_rubrics_five_builtin():

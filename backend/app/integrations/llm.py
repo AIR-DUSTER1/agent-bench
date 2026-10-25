@@ -1,8 +1,6 @@
 """LLM 工厂：统一从配置构建被测模型与 Judge 模型（OpenAI 兼容协议）。"""
 from __future__ import annotations
 
-from functools import lru_cache
-
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 

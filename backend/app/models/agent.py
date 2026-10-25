@@ -36,6 +36,3 @@ class AgentVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     agent: Mapped[Agent] = relationship(back_populates="versions")
-
-    def next_version() -> str:  # noqa: N805
-        return "v1"

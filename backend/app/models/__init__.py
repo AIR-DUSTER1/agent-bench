@@ -5,6 +5,7 @@ from app.models.dataset import Dataset, DatasetVersion, EvalCase
 from app.models.evaluation import (
     RUN_MODES,
     RUN_STATUS,
+    RunStatus,
     AttributionFinding,
     CaseResult,
     Dimension,
@@ -18,6 +19,6 @@ from app.models.governance import TagDict
 __all__ = [
     "Base", "AGENT_TYPES", "Agent", "AgentVersion",
     "Dataset", "DatasetVersion", "EvalCase",
-    "RUN_MODES", "RUN_STATUS", "Dimension", "EvalRun", "CaseResult", "DimensionScore",
+    "RUN_MODES", "RUN_STATUS", "RunStatus", "Dimension", "EvalRun", "CaseResult", "DimensionScore",
     "AttributionFinding", "Report", "QualityReport", "TagDict",
 ]

@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.governance.quality import check_dataset, summarize
-from app.governance.tags import BUILTIN_TAG_DICT
 from app.models import Dataset, DatasetVersion, EvalCase, QualityReport, TagDict
 from app.schemas import CaseIn, CaseUpdate, DatasetCreate, ImportIn, PublishIn
 
@@ -57,7 +56,7 @@ def _version_out(v: DatasetVersion, with_cases: bool = False) -> dict:
 
 
 @router.get("")
-def list_datasets(db: Session = Depends(get_db)):
+def list_datasets(db: Session = Depends(get_db)) -> list[dict]:
     out = []
     for ds in db.execute(select(Dataset).order_by(Dataset.id)).scalars():
         published = [v for v in ds.versions if v.version != "draft"]
@@ -73,7 +72,7 @@ def list_datasets(db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def create_dataset(body: DatasetCreate, db: Session = Depends(get_db)):
+def create_dataset(body: DatasetCreate, db: Session = Depends(get_db)) -> dict:
     if db.query(Dataset).filter_by(name=body.name).first():
         raise HTTPException(409, f"数据集已存在: {body.name}")
     ds = Dataset(name=body.name, description=body.description, target_types=body.target_types)
@@ -85,7 +84,7 @@ def create_dataset(body: DatasetCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{ds_id}")
-def get_dataset(ds_id: int, db: Session = Depends(get_db)):
+def get_dataset(ds_id: int, db: Session = Depends(get_db)) -> dict:
     ds = db.get(Dataset, ds_id)
     if not ds:
         raise HTTPException(404, "数据集不存在")
@@ -99,7 +98,7 @@ def get_dataset(ds_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{ds_id}")
-def delete_dataset(ds_id: int, db: Session = Depends(get_db)):
+def delete_dataset(ds_id: int, db: Session = Depends(get_db)) -> dict:
     ds = db.get(Dataset, ds_id)
     if not ds:
         raise HTTPException(404, "数据集不存在")
@@ -125,7 +124,7 @@ def _add_case(db: Session, draft: DatasetVersion, c: CaseIn) -> EvalCase:
 
 
 @router.post("/{ds_id}/cases", status_code=201)
-def add_case(ds_id: int, body: CaseIn, db: Session = Depends(get_db)):
+def add_case(ds_id: int, body: CaseIn, db: Session = Depends(get_db)) -> dict:
     ds = db.get(Dataset, ds_id)
     if not ds:
         raise HTTPException(404, "数据集不存在")
@@ -141,7 +140,7 @@ def add_case(ds_id: int, body: CaseIn, db: Session = Depends(get_db)):
 
 
 @router.put("/{ds_id}/cases/{case_id}")
-def update_case(ds_id: int, case_id: int, body: CaseUpdate, db: Session = Depends(get_db)):
+def update_case(ds_id: int, case_id: int, body: CaseUpdate, db: Session = Depends(get_db)) -> dict:
     case = db.get(EvalCase, case_id)
     if not case or case.dataset_version.dataset_id != ds_id or case.dataset_version.version != "draft":
         raise HTTPException(404, "草稿样本不存在")
@@ -152,7 +151,7 @@ def update_case(ds_id: int, case_id: int, body: CaseUpdate, db: Session = Depend
 
 
 @router.delete("/{ds_id}/cases/{case_id}")
-def delete_case(ds_id: int, case_id: int, db: Session = Depends(get_db)):
+def delete_case(ds_id: int, case_id: int, db: Session = Depends(get_db)) -> dict:
     case = db.get(EvalCase, case_id)
     if not case or case.dataset_version.dataset_id != ds_id or case.dataset_version.version != "draft":
         raise HTTPException(404, "草稿样本不存在")
@@ -164,7 +163,7 @@ def delete_case(ds_id: int, case_id: int, db: Session = Depends(get_db)):
 # ---------- JSON 批量导入（预检 → 确认两步） ----------
 
 @router.post("/{ds_id}/import")
-def import_cases(ds_id: int, body: ImportIn, db: Session = Depends(get_db)):
+def import_cases(ds_id: int, body: ImportIn, db: Session = Depends(get_db)) -> dict:
     """confirm=false：仅预检返回问题清单；confirm=true：校验通过后落库。"""
     ds = db.get(Dataset, ds_id)
     if not ds:
@@ -203,7 +202,7 @@ def _run_quality(db: Session, ds: Dataset, draft: DatasetVersion) -> dict:
 
 
 @router.post("/{ds_id}/quality-check")
-def quality_check(ds_id: int, db: Session = Depends(get_db)):
+def quality_check(ds_id: int, db: Session = Depends(get_db)) -> dict:
     ds = db.get(Dataset, ds_id)
     if not ds:
         raise HTTPException(404, "数据集不存在")
@@ -218,7 +217,7 @@ def quality_check(ds_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{ds_id}/publish")
-def publish(ds_id: int, body: PublishIn, db: Session = Depends(get_db)):
+def publish(ds_id: int, body: PublishIn, db: Session = Depends(get_db)) -> dict:
     ds = db.get(Dataset, ds_id)
     if not ds:
         raise HTTPException(404, "数据集不存在")
@@ -254,7 +253,7 @@ def publish(ds_id: int, body: PublishIn, db: Session = Depends(get_db)):
 
 
 @router.get("/{ds_id}/versions")
-def list_versions(ds_id: int, db: Session = Depends(get_db)):
+def list_versions(ds_id: int, db: Session = Depends(get_db)) -> list[dict]:
     ds = db.get(Dataset, ds_id)
     if not ds:
         raise HTTPException(404, "数据集不存在")
@@ -262,7 +261,7 @@ def list_versions(ds_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{ds_id}/versions/{v_id}")
-def get_version(ds_id: int, v_id: int, db: Session = Depends(get_db)):
+def get_version(ds_id: int, v_id: int, db: Session = Depends(get_db)) -> dict:
     v = db.get(DatasetVersion, v_id)
     if not v or v.dataset_id != ds_id:
         raise HTTPException(404, "版本不存在")
@@ -270,11 +269,12 @@ def get_version(ds_id: int, v_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{ds_id}/versions/{v_id}/export")
-def export_version(ds_id: int, v_id: int, db: Session = Depends(get_db)):
+def export_version(ds_id: int, v_id: int, db: Session = Depends(get_db)) -> dict:
     v = db.get(DatasetVersion, v_id)
     if not v or v.dataset_id != ds_id:
         raise HTTPException(404, "版本不存在")
     cases = [_case_out(c) for c in sorted(v.cases, key=lambda x: x.seq)]
     for c in cases:
-        c.pop("id", None), c.pop("seq", None)
+        c.pop("id", None)
+        c.pop("seq", None)
     return {"dataset": v.dataset.name, "version": v.version, "cases": cases}

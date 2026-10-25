@@ -1,4 +1,4 @@
-"""数据库会话与初始化。"""
+"""数据库引擎、会话与建表（只负责 schema，不依赖业务引擎层——种子数据见 app/bootstrap.py）。"""
 from __future__ import annotations
 
 from collections.abc import Generator
@@ -31,21 +31,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """建表 + 写入内置维度与标签字典（幂等）。"""
+    """建表（幂等）。导入 app.models 触发全部模型注册后再 create_all。"""
     from app import models  # noqa: F401  确保模型全部注册
-    from app.models import Base
-    Base.metadata.create_all(engine)
 
-    from sqlalchemy.orm import Session
-    from app.evaluation.rubrics import BUILTIN_DIMENSIONS
-    from app.governance.tags import BUILTIN_TAG_DICT
-
-    with SessionLocal() as db:  # type: Session
-        Dimension, TagDict = models.Dimension, models.TagDict
-        for d in BUILTIN_DIMENSIONS:
-            if not db.query(Dimension).filter_by(code=d["code"]).first():
-                db.add(Dimension(**d, is_builtin=True))
-        for t in BUILTIN_TAG_DICT:
-            if not db.query(TagDict).filter_by(category=t["category"], value=t["value"]).first():
-                db.add(TagDict(**t))
-        db.commit()
+    models.Base.metadata.create_all(engine)

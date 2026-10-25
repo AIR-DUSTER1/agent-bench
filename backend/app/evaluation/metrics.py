@@ -232,8 +232,7 @@ def ab_compare(
             w += sb > sa
             t += sb == sa
             l += sb < sa
-        if code == "hallucination" or True:
-            overall_diffs.extend(diffs)
+        overall_diffs.extend(diffs)
         win, tie, loss = win + w, tie + t, loss + l
         test = paired_t_test(diffs) if len(diffs) >= 8 else wilcoxon_test(diffs)
         dim_detail[code] = {

@@ -84,7 +84,7 @@ class RunCreate(BaseModel):
     dataset_version_id: int
     judge_mode: str = "single_call"
     dimension_codes: list[str] = Field(default_factory=list)
-    concurrency: int = 4
+    concurrency: int | None = None  # 缺省回落 settings.EXEC_CONCURRENCY
 
 
 # ---------- 标签 ----------
@@ -97,13 +97,3 @@ class TagCreate(BaseModel):
 class TagUpdate(BaseModel):
     label: str | None = None
     enabled: bool | None = None
-
-
-# ---------- 系统 ----------
-class SettingsUpdate(BaseModel):
-    llm_base_url: str | None = None
-    llm_model: str | None = None
-    judge_model: str | None = None
-    exec_concurrency: int | None = None
-    pass_threshold: int | None = None
-    langfuse_host: str | None = None

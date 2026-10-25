@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
+from app.bootstrap import seed_builtin_data  # noqa: E402
 from app.core.db import SessionLocal, init_db  # noqa: E402
 from app.governance.quality import check_dataset, summarize  # noqa: E402
 from app.models import (  # noqa: E402
@@ -132,6 +133,7 @@ def seed_agents(db) -> None:
 def main() -> None:
     print("初始化数据库与内置维度/标签…")
     init_db()
+    seed_builtin_data()
     with SessionLocal() as db:
         print("导入评测集…")
         seed_datasets(db)

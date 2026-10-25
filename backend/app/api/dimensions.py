@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/dimensions", tags=["dimensions"])
 
 
 @router.get("")
-def list_dimensions(db: Session = Depends(get_db)):
+def list_dimensions(db: Session = Depends(get_db)) -> list[dict]:
     dims = db.execute(select(Dimension).order_by(Dimension.weight.desc())).scalars().all()
     return [
         {"code": d.code, "name": d.name, "description": d.description, "rubric": d.rubric,
@@ -24,7 +24,7 @@ def list_dimensions(db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def create_dimension(body: DimensionCreate, db: Session = Depends(get_db)):
+def create_dimension(body: DimensionCreate, db: Session = Depends(get_db)) -> dict:
     if db.get(Dimension, body.code):
         raise HTTPException(409, f"维度 code 已存在: {body.code}")
     d = Dimension(**body.model_dump(), is_builtin=False)
@@ -34,7 +34,7 @@ def create_dimension(body: DimensionCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{code}")
-def update_dimension(code: str, body: DimensionUpdate, db: Session = Depends(get_db)):
+def update_dimension(code: str, body: DimensionUpdate, db: Session = Depends(get_db)) -> dict:
     d = db.get(Dimension, code)
     if not d:
         raise HTTPException(404, "维度不存在")
@@ -45,7 +45,7 @@ def update_dimension(code: str, body: DimensionUpdate, db: Session = Depends(get
 
 
 @router.delete("/{code}")
-def delete_dimension(code: str, db: Session = Depends(get_db)):
+def delete_dimension(code: str, db: Session = Depends(get_db)) -> dict:
     d = db.get(Dimension, code)
     if not d:
         raise HTTPException(404, "维度不存在")

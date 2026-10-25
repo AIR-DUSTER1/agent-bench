@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/governance", tags=["governance"])
 
 
 @router.get("/tags")
-def list_tags(db: Session = Depends(get_db)):
+def list_tags(db: Session = Depends(get_db)) -> dict:
     tags = db.execute(select(TagDict).order_by(TagDict.category, TagDict.id)).scalars().all()
     out = {c: [] for c in TAG_CATEGORIES}
     for t in tags:
@@ -27,7 +27,7 @@ def list_tags(db: Session = Depends(get_db)):
 
 
 @router.post("/tags", status_code=201)
-def create_tag(body: TagCreate, db: Session = Depends(get_db)):
+def create_tag(body: TagCreate, db: Session = Depends(get_db)) -> dict:
     if body.category not in TAG_CATEGORIES:
         raise HTTPException(400, f"category 必须是 {TAG_CATEGORIES}")
     if db.query(TagDict).filter_by(category=body.category, value=body.value).first():
@@ -39,7 +39,7 @@ def create_tag(body: TagCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/tags/{tag_id}")
-def update_tag(tag_id: int, body: TagUpdate, db: Session = Depends(get_db)):
+def update_tag(tag_id: int, body: TagUpdate, db: Session = Depends(get_db)) -> dict:
     t = db.get(TagDict, tag_id)
     if not t:
         raise HTTPException(404, "标签不存在")
@@ -52,7 +52,7 @@ def update_tag(tag_id: int, body: TagUpdate, db: Session = Depends(get_db)):
 
 
 @router.get("/quality-reports")
-def quality_reports(dataset_id: int | None = None, db: Session = Depends(get_db)):
+def quality_reports(dataset_id: int | None = None, db: Session = Depends(get_db)) -> list[dict]:
     q = select(QualityReport).order_by(QualityReport.id.desc()).limit(50)
     if dataset_id:
         q = q.where(QualityReport.dataset_id == dataset_id)

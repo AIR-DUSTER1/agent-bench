@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 
 
 @router.get("/health")
-def health(db: Session = Depends(get_db)):
+def health(db: Session = Depends(get_db)) -> dict:
     db.execute(text("SELECT 1"))
     return {
         "status": "ok",
@@ -26,7 +26,7 @@ def health(db: Session = Depends(get_db)):
 
 
 @router.get("/settings")
-def get_settings():
+def get_settings() -> dict:
     def mask(v: str) -> str:
         return (v[:6] + "***") if v and len(v) > 10 else ("***" if v else "")
 
