@@ -361,3 +361,57 @@ def test_diff_cases_alignment():
     tag_changed = [dict(old[0], tags={"risk": "high"}), old[1]]
     d3 = diff_cases(old, tag_changed)
     assert len(d3["changed"]) == 1 and d3["unchanged"] == 1
+
+
+# ---------- 模型注册表解析 ----------
+
+class _FakeDB:
+    """仅实现 db.get 的桩：id -> 对象。"""
+    def __init__(self, objects: dict):
+        self._objects = objects
+
+    def get(self, model, id_):
+        return self._objects.get((model, id_))
+
+
+def test_resolve_llm_params_precedence():
+    """解析优先级：run 覆盖 > config.model_id > 原生配置；无引用时原样返回。"""
+    from app.integrations.model_registry import resolve_llm_params
+    from app.models.registry import ModelEntry, ModelProvider
+
+    provider = ModelProvider(id=1, name="DeepSeek", base_url="https://api.deepseek.com", api_key="sk-test")
+    entry = ModelEntry(id=9, provider_id=1, name="deepseek-flash")
+    db = _FakeDB({(ModelProvider, 1): provider, (ModelEntry, 9): entry})
+
+    # config 引用：解析出供应商三元组，且 model_id 键被剥离
+    cfg = resolve_llm_params(db, {"model_id": 9, "temperature": 0.2})
+    assert cfg["base_url"] == "https://api.deepseek.com"
+    assert cfg["api_key"] == "sk-test"
+    assert cfg["model"] == "deepseek-flash"
+    assert "model_id" not in cfg and cfg["temperature"] == 0.2
+
+    # run 级覆盖优先于 config 引用
+    other = ModelEntry(id=10, provider_id=1, name="deepseek-chat")
+    db2 = _FakeDB({(ModelProvider, 1): provider, (ModelEntry, 9): entry, (ModelEntry, 10): other})
+    cfg2 = resolve_llm_params(db2, {"model_id": 9}, override_model_id=10)
+    assert cfg2["model"] == "deepseek-chat"
+
+    # 无引用：原样透传（回落 .env 全局由 Agent 构建器处理）
+    passthrough = {"base_url": "http://x", "model": "m1"}
+    assert resolve_llm_params(db, passthrough) == passthrough
+
+
+def test_resolve_llm_params_rejects_invalid():
+    """停用/不存在的 model_id 必须显式报错，不得静默回落到全局模型（否则跑错模型不自知）。"""
+    import pytest as _pytest
+
+    from app.integrations.model_registry import resolve_llm_params
+    from app.models.registry import ModelEntry, ModelProvider
+
+    provider = ModelProvider(id=1, name="P", base_url="http://x", api_key="k")
+    disabled = ModelEntry(id=9, provider_id=1, name="m", enabled=False)
+    db = _FakeDB({(ModelProvider, 1): provider, (ModelEntry, 9): disabled})
+    with _pytest.raises(ValueError, match="停用"):
+        resolve_llm_params(db, {"model_id": 9})
+    with _pytest.raises(ValueError):
+        resolve_llm_params(db, {"model_id": 999})

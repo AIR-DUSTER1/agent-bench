@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.evaluation.judge import Judge
 from app.evaluation.report import generate_reports
+from app.integrations.model_registry import resolve_llm_params
 from app.integrations.tracing import flush_langfuse, record_trace
 from app.models import (
     Agent, AgentVersion, AttributionFinding, CaseResult, DatasetVersion,
@@ -144,7 +145,9 @@ def _load_context(db, run: EvalRun) -> RunContext:
     agents = {}
     for av in avs:
         agent = db.get(Agent, av.agent_id)
-        agents[av.id] = build_agent(agent.type, _j(av.config, {}))
+        # 模型解析优先级：run.model_id 覆盖 > 版本配置 model_id 引用 > 配置原生值 > .env 全局
+        cfg = resolve_llm_params(db, _j(av.config, {}), run.model_id)
+        agents[av.id] = build_agent(agent.type, cfg)
     return RunContext(run=run, cases=cases, case_map={c.id: c for c in cases},
                       dims=dims, avs=avs, agents=agents)
 

@@ -3,7 +3,7 @@ import { App, Button, Form, Input, Modal, Select, Space, Table, Tag, Typography 
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, errText } from '../api'
-import type { Agent, TestResult } from '../types'
+import type { Agent, ModelEntryInfo, TestResult } from '../types'
 import { AGENT_TYPE_LABELS } from '../format'
 
 export default function Agents() {
@@ -16,6 +16,13 @@ export default function Agents() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [form] = Form.useForm()
+  const selectedType = Form.useWatch('type', form)
+  const { data: modelEntries = [] } = useQuery({
+    queryKey: ['model-entries'],
+    queryFn: () => api.get<ModelEntryInfo[]>('/models'),
+    enabled: createOpen,
+  })
+  const BUILTIN_TYPES = ['prompt', 'rag', 'tool']
   const [testAgent, setTestAgent] = useState<Agent | null>(null)
   const [testInput, setTestInput] = useState('法国的首都是哪里？')
   const [testResult, setTestResult] = useState<TestResult | null>(null)
@@ -39,14 +46,16 @@ export default function Agents() {
 
   const submitCreate = () => {
     form.validateFields().then((v) => {
-      let config: unknown = {}
+      let config: Record<string, unknown>
       try {
         config = JSON.parse(v.config || '{}')
       } catch {
         message.error('配置不是合法 JSON')
         return
       }
-      createMut.mutate({ ...v, config })
+      // prompt/rag/tool：模型从注册表下拉选择，写入 model_id 引用（运行时解析）
+      if (BUILTIN_TYPES.includes(v.type) && v.model_id) config.model_id = v.model_id
+      createMut.mutate({ name: v.name, type: v.type, description: v.description, config })
     })
   }
 
@@ -110,10 +119,22 @@ export default function Agents() {
           <Form.Item name="description" label="描述">
             <Input />
           </Form.Item>
+          {BUILTIN_TYPES.includes(selectedType) && (
+            <Form.Item name="model_id" label="模型" extra="从模型注册表选择；留空用 .env 全局模型（LLM_*）">
+              <Select
+                allowClear
+                showSearch
+                placeholder="选择供应商 / 模型"
+                options={modelEntries.map((e) => ({ value: e.id, label: e.label + (e.enabled ? '' : '（停用）') }))}
+              />
+            </Form.Item>
+          )}
           <Form.Item
             name="config"
             label="配置（JSON）"
-            extra="如 base_url/model/system_prompt/argv 等，随类型而异"
+            extra={BUILTIN_TYPES.includes(selectedType)
+              ? 'temperature / system_prompt / few_shot / top_k / kb_dir 等类型参数'
+              : 'base_url/model/system_prompt/argv 等完整配置'}
           >
             <Input.TextArea rows={5} style={{ fontFamily: 'monospace' }} />
           </Form.Item>

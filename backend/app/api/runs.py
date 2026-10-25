@@ -15,7 +15,8 @@ from app.core.db import get_db
 from app.evaluation.metrics import normalize_usage, significance, sum_usage
 from app.evaluation.pipeline import cancel_run, start_run
 from app.models import (
-    Agent, AgentVersion, CaseResult, DatasetVersion, Dimension, EvalCase, EvalRun, Report, RunStatus,
+    Agent, AgentVersion, CaseResult, DatasetVersion, Dimension, EvalCase, EvalRun,
+    ModelEntry, ModelProvider, Report, RunStatus,
 )
 from app.schemas import ReplayIn, RunCreate
 
@@ -31,12 +32,19 @@ def _run_out(db: Session, r: EvalRun) -> dict:
             a = db.get(Agent, av.agent_id)
             sides.append({"agent_version_id": av.id, "version": av.version,
                           "agent_name": a.name if a else "?", "agent_type": a.type if a else "?"})
+    model_label = None
+    if r.model_id:
+        me = db.get(ModelEntry, r.model_id)
+        if me:
+            mp = db.get(ModelProvider, me.provider_id)
+            model_label = f"{mp.name if mp else '?'}/{me.name}"
     return {
         "id": r.id, "name": r.name, "mode": r.mode, "status": r.status,
         "sides": sides, "dataset_version_id": r.dataset_version_id,
         "judge_model": r.judge_model, "judge_mode": r.judge_mode,
         "dimension_codes": json.loads(r.dimension_codes or "[]"),
         "concurrency": r.concurrency, "progress": r.progress, "total_cases": r.total_cases,
+        "model_id": r.model_id, "model_label": model_label,
         "error": r.error,
         "started_at": r.started_at.isoformat() if r.started_at else None,
         "finished_at": r.finished_at.isoformat() if r.finished_at else None,
@@ -55,6 +63,8 @@ def create_run(body: RunCreate, background: BackgroundTasks, db: Session = Depen
     dsv = db.get(DatasetVersion, body.dataset_version_id)
     if not dsv or dsv.version == "draft":
         raise HTTPException(400, "dataset_version_id 必须是已发布版本（draft 不可评测）")
+    if body.model_id is not None and not db.get(ModelEntry, body.model_id):
+        raise HTTPException(400, f"model_id={body.model_id} 不存在")
     run = EvalRun(
         name=body.name, mode=mode,
         agent_version_ids=json.dumps(body.agent_version_ids),
@@ -62,6 +72,7 @@ def create_run(body: RunCreate, background: BackgroundTasks, db: Session = Depen
         judge_model=settings.judge_model, judge_mode=body.judge_mode,
         dimension_codes=json.dumps(body.dimension_codes),
         concurrency=body.concurrency or settings.EXEC_CONCURRENCY,
+        model_id=body.model_id,
     )
     db.add(run)
     db.commit()
@@ -198,6 +209,7 @@ def replay_run(run_id: int, body: ReplayIn, background: BackgroundTasks, db: Ses
         judge_mode=r.judge_mode,
         dimension_codes=r.dimension_codes,
         concurrency=r.concurrency,
+        model_id=r.model_id,
     )
     db.add(run)
     db.commit()

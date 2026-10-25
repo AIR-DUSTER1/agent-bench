@@ -85,12 +85,42 @@ class RunCreate(BaseModel):
     judge_mode: str = "single_call"
     dimension_codes: list[str] = Field(default_factory=list)
     concurrency: int | None = None  # 缺省回落 settings.EXEC_CONCURRENCY
+    model_id: int | None = None  # 模型覆盖（model_entry.id）；空 = 用 Agent 配置/.env 全局
 
 
 class ReplayIn(BaseModel):
     """以既有 run 为模板复评：只换数据集版本，其余配置（Agent/并发/Judge）继承。"""
     dataset_version_id: int
     name: str | None = None
+
+
+# ---------- 模型注册表 ----------
+class ProviderCreate(BaseModel):
+    name: str
+    base_url: str
+    api_key: str = ""
+    enabled: bool = True
+
+
+class ProviderUpdate(BaseModel):
+    name: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    enabled: bool | None = None
+
+
+class ModelEntryCreate(BaseModel):
+    provider_id: int
+    name: str
+    display_name: str = ""
+    enabled: bool = True
+
+
+class ModelEntryUpdate(BaseModel):
+    name: str | None = None
+    display_name: str | None = None
+    enabled: bool | None = None
+    provider_id: int | None = None
 
 
 # ---------- 标签 ----------

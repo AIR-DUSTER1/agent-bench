@@ -270,8 +270,9 @@ export default function RunDetail() {
         <Descriptions.Item label="模式">{run.mode.toUpperCase()}</Descriptions.Item>
         <Descriptions.Item label="状态"><StatusTag status={run.status} /></Descriptions.Item>
         <Descriptions.Item label="进度">{run.progress}/{run.total_cases}（{pct}%）</Descriptions.Item>
-        <Descriptions.Item label="Judge">{run.judge_model} · {run.judge_mode}</Descriptions.Item>
-        <Descriptions.Item label="并发">{run.concurrency}</Descriptions.Item>
+          <Descriptions.Item label="Judge">{run.judge_model} · {run.judge_mode}</Descriptions.Item>
+          <Descriptions.Item label="并发">{run.concurrency}</Descriptions.Item>
+          {run.model_label && <Descriptions.Item label="覆盖模型"><Tag color="blue">{run.model_label}</Tag></Descriptions.Item>}
         <Descriptions.Item label="创建时间">{fmtTime(run.created_at)}</Descriptions.Item>
         <Descriptions.Item label="开始">{fmtTime(run.started_at)}</Descriptions.Item>
         <Descriptions.Item label="结束">{fmtTime(run.finished_at)}</Descriptions.Item>

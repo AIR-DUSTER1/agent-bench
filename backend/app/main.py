@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import agents, datasets, dimensions, governance, runs, stats, system
+from app.api import agents, datasets, dimensions, governance, models, runs, stats, system
 from app.bootstrap import seed_builtin_data
 from app.core.config import BASE_DIR, settings
 from app.core.db import init_db
@@ -48,7 +48,7 @@ async def auth_middleware(request: Request, call_next):
         return JSONResponse({"detail": "unauthorized：缺少或错误的 Bearer token"}, status_code=401)
     return await call_next(request)
 
-for r in (system, agents, datasets, dimensions, runs, governance, stats):
+for r in (system, agents, datasets, dimensions, runs, governance, stats, models):
     app.include_router(r.router)
 
 # 前端托管：优先 React 构建产物（frontend/ → static/dist，SPA 路由回退 index.html）；

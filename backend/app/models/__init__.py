@@ -15,10 +15,12 @@ from app.models.evaluation import (
     Report,
 )
 from app.models.governance import TagDict
+from app.models.registry import ModelEntry, ModelProvider
 
 __all__ = [
     "Base", "AGENT_TYPES", "Agent", "AgentVersion",
     "Dataset", "DatasetVersion", "EvalCase",
     "RUN_MODES", "RUN_STATUS", "RunStatus", "Dimension", "EvalRun", "CaseResult", "DimensionScore",
     "AttributionFinding", "Report", "QualityReport", "TagDict",
+    "ModelEntry", "ModelProvider",
 ]

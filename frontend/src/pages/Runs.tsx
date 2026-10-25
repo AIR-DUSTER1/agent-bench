@@ -6,7 +6,7 @@ import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, errText } from '../api'
-import type { Agent, DatasetListItem, EvalRun } from '../types'
+import type { Agent, DatasetListItem, EvalRun, ModelEntryInfo } from '../types'
 import { StatusTag } from '../format'
 
 const TERMINAL = ['done', 'failed', 'cancelled']
@@ -29,6 +29,10 @@ export default function Runs() {
   const { data: datasets = [] } = useQuery({
     queryKey: ['datasets'],
     queryFn: () => api.get<DatasetListItem[]>('/datasets'),
+  })
+  const { data: modelEntries = [] } = useQuery({
+    queryKey: ['model-entries'],
+    queryFn: () => api.get<ModelEntryInfo[]>('/models'),
   })
 
   const avOptions = useMemo(
@@ -69,6 +73,7 @@ export default function Runs() {
         agent_version_ids: ids,
         dataset_version_id: v.datasetVersion,
         concurrency: v.concurrency,
+        model_id: v.model || undefined,
       })
     })
   }
@@ -126,6 +131,15 @@ export default function Runs() {
           </Form.Item>
           <Form.Item name="datasetVersion" label="数据集版本" rules={[{ required: true, message: '必选' }]}>
             <Select options={dsOptions} placeholder="已发布版本" style={{ width: 230 }} showSearch />
+          </Form.Item>
+          <Form.Item name="model" label="模型覆盖">
+            <Select
+              options={modelEntries.filter((e) => e.enabled).map((e) => ({ value: e.id, label: e.label }))}
+              allowClear
+              placeholder="留空用 Agent 配置的模型"
+              style={{ width: 220 }}
+              showSearch
+            />
           </Form.Item>
           <Form.Item name="concurrency" label="并发">
             <InputNumber min={1} max={8} />

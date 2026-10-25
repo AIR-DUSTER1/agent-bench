@@ -58,6 +58,8 @@ class EvalRun(TimestampMixin, Base):
     judge_mode: Mapped[str] = mapped_column(String(16), default="single_call")  # single_call|per_dimension
     dimension_codes: Mapped[str] = mapped_column(Text, default="[]")  # 本次启用的维度 JSON
     concurrency: Mapped[int] = mapped_column(Integer, default=4)
+    # 发起评测时的模型覆盖（指向 model_entry.id）；空 = 用 Agent 版本配置/.env 全局模型
+    model_id: Mapped[int | None] = mapped_column(ForeignKey("model_entry.id"), nullable=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)   # 已完成样本数
     total_cases: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")

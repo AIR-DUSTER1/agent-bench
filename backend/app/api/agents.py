@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.runner import try_run
 from app.core.db import get_db
+from app.integrations.model_registry import resolve_llm_params
 from app.models import AGENT_TYPES, Agent, AgentVersion
 from app.schemas import AgentCreate, AgentTestInput, AgentVersionCreate
 
@@ -72,10 +73,11 @@ def add_version(agent_id: int, body: AgentVersionCreate, db: Session = Depends(g
 
 @router.post("/{agent_id}/test")
 async def test_agent(agent_id: int, body: AgentTestInput, db: Session = Depends(get_db)) -> dict:
-    """单样本试跑最新（或指定）版本。"""
+    """单样本试跑最新（或指定）版本；配置中的 model_id 引用在此解析。"""
     a = _get_agent_or_404(db, agent_id)
     versions = sorted(a.versions, key=lambda v: v.id)
     av = db.get(AgentVersion, body.version_id) if body.version_id else versions[-1]
     if not av or av.agent_id != a.id:
         raise HTTPException(404, "版本不存在")
-    return await try_run(a.type, json.loads(av.config), body.input)
+    cfg = resolve_llm_params(db, json.loads(av.config))
+    return await try_run(a.type, cfg, body.input)

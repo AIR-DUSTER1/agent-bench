@@ -130,6 +130,8 @@ export interface EvalRun {
   concurrency: number
   progress: number
   total_cases: number
+  model_id?: number | null
+  model_label?: string | null
   error: string
   started_at: string | null
   finished_at: string | null
@@ -275,4 +277,26 @@ export interface CompareResult {
   b: { run_id: number; name: string; dataset_version_id: number }
   warning: string | null
   sides: CompareSide[]
+}
+
+// ---------- 模型注册表 ----------
+
+export interface ModelProviderInfo {
+  id: number
+  name: string
+  base_url: string
+  enabled: boolean
+  api_key_masked: string
+  created_at: string
+}
+
+export interface ModelEntryInfo {
+  id: number
+  provider_id: number
+  provider_name: string
+  name: string
+  display_name: string
+  enabled: boolean
+  label: string
+  created_at: string
 }

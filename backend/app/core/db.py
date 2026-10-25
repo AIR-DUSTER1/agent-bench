@@ -40,6 +40,11 @@ def init_db() -> None:
         "case_result",
         {"judge_usage": "TEXT DEFAULT '{}'"},
     )
+    _ensure_columns(
+        engine,
+        "eval_run",
+        {"model_id": "INTEGER"},
+    )
 
 
 def _ensure_columns(target_engine, table: str, columns: dict[str, str]) -> None:
