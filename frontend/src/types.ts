@@ -181,3 +181,58 @@ export interface QualityReportRow {
   issues: QualityIssue[]
   created_at: string
 }
+
+// ---------- token 统计（口径与后端 metrics.normalize_usage 对齐） ----------
+
+export interface NormalizedUsage {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  source: 'api' | 'approx_chars' | 'none'
+  input_chars?: number
+  output_chars?: number
+}
+
+export interface UsageStat {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  calls: number
+  api_calls: number
+  approx_calls: number
+  none_calls: number
+}
+
+export interface TokenRow {
+  case_result_id: number
+  seq: number
+  status: string
+  agent_name: string
+  agent_version: string
+  usage: NormalizedUsage
+  judge_usage: NormalizedUsage
+}
+
+export interface RunTokens {
+  run_id: number
+  rows: TokenRow[]
+  agent_total: UsageStat
+  judge_total: UsageStat
+}
+
+export interface StatsEntry {
+  key?: string
+  run_id?: number
+  name?: string
+  status?: string
+  created_at?: string
+  agent: UsageStat
+  judge: UsageStat
+}
+
+export interface TokenStats {
+  total: { agent: UsageStat; judge: UsageStat }
+  by_run: StatsEntry[]
+  by_agent: StatsEntry[]
+  by_date: StatsEntry[]
+}

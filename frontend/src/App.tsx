@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Input, Layout, Menu, Modal, Typography } from 'antd'
 import {
-  DatabaseOutlined, DashboardOutlined, RobotOutlined, SettingOutlined,
-  TagsOutlined, ThunderboltOutlined,
+  BarChartOutlined, DatabaseOutlined, DashboardOutlined, RobotOutlined,
+  SettingOutlined, TagsOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -13,6 +13,7 @@ import Agents from './pages/Agents'
 import Datasets from './pages/Datasets'
 import Runs from './pages/Runs'
 import RunDetail from './pages/RunDetail'
+import Stats from './pages/Stats'
 import Governance from './pages/Governance'
 import System from './pages/System'
 
@@ -21,6 +22,7 @@ const MENU_ITEMS = [
   { key: '/agents', icon: <RobotOutlined />, label: 'Agent 管理' },
   { key: '/datasets', icon: <DatabaseOutlined />, label: '评测集管理' },
   { key: '/runs', icon: <ThunderboltOutlined />, label: '评测任务' },
+  { key: '/stats', icon: <BarChartOutlined />, label: '统计' },
   { key: '/governance', icon: <TagsOutlined />, label: '数据治理' },
   { key: '/system', icon: <SettingOutlined />, label: '系统设置' },
 ]
@@ -120,6 +122,7 @@ export default function App() {
           <Route path="/datasets" element={<Datasets />} />
           <Route path="/runs" element={<Runs />} />
           <Route path="/runs/:id" element={<RunDetail />} />
+          <Route path="/stats" element={<Stats />} />
           <Route path="/governance" element={<Governance />} />
           <Route path="/system" element={<System />} />
           <Route path="*" element={<Navigate to="/" replace />} />
