@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+alembic
+pydantic>=2
+pydantic-settings
+httpx
+langchain>=0.3
+langchain-openai>=0.3
+openai
+numpy
+jinja2
+python-multipart
+pytest
+pytest-asyncio
+langfuse>=2.0

@@ -1,0 +1,77 @@
+# Langfuse v3 自托管最小参考（可选组件，未配置时 Agent-Bench 用本地 JSON Trace 完整运行）
+# 完整部署参数以官方文档为准：https://langfuse.com/self-hosting
+# 启动后在 Langfuse Web 创建组织/项目，拿到 pk/sk 填入 backend/.env：
+#   LANGFUSE_PUBLIC_KEY=pk-lf-...
+#   LANGFUSE_SECRET_KEY=sk-lf-...
+#   LANGFUSE_HOST=http://localhost:3000
+services:
+  langfuse-web:
+    image: langfuse/langfuse:3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/langfuse
+      SALT: "changeme-salt"
+      ENCRYPTION_KEY: "changeme-encryption-key-32bytes!!"
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: changeme-nextauth-secret
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minio
+      S3_SECRET_KEY: miniosecret
+      S3_BUCKET: langfuse
+      S3_REGION: us-east-1
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: myredissecret
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    environment:
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  minio:
+    image: minio/minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7
+    command: --requirepass myredissecret
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "myredissecret", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
