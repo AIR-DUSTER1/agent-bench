@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  App, Button, Card, Descriptions, Form, Input, Modal, Space, Switch, Table, Tag, Typography,
+  App, Button, Card, Descriptions, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -78,6 +78,8 @@ function ProviderModal({ open, initial, onClose }: {
 
 // ---------- 模型管理弹窗（某供应商下的模型列表） ----------
 
+const THINKING_LEVELS = ['off', 'low', 'medium', 'high']
+
 function ModelsModal({ provider, onClose }: { provider: ModelProviderInfo | null; onClose: () => void }) {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
@@ -94,7 +96,7 @@ function ModelsModal({ provider, onClose }: { provider: ModelProviderInfo | null
     void queryClient.invalidateQueries({ queryKey: ['providers'] })
   }
   const addMut = useMutation({
-    mutationFn: (v: { name: string; display_name?: string }) =>
+    mutationFn: (v: { name: string; display_name?: string; thinking_level: string }) =>
       api.post('/models', { provider_id: provider?.id, ...v }),
     onSuccess: () => {
       message.success('已添加模型')
@@ -116,12 +118,32 @@ function ModelsModal({ provider, onClose }: { provider: ModelProviderInfo | null
     onSuccess: invalidate,
     onError: (e) => message.error(errText(e), 6),
   })
+  const levelMut = useMutation({
+    mutationFn: ({ id, thinking_level }: { id: number; thinking_level: string }) => api.put(`/models/${id}`, { thinking_level }),
+    onSuccess: () => {
+      message.success('思考等级已更新')
+      invalidate()
+    },
+    onError: (e) => message.error(errText(e), 6),
+  })
 
   const columns: TableColumnsType<ModelEntryInfo> = [
     { title: '模型 ID', dataIndex: 'name' },
     { title: '显示名', dataIndex: 'display_name', render: (d: string) => d || '-' },
     {
-      title: '启用', dataIndex: 'enabled', width: 80,
+      title: '思考等级', dataIndex: 'thinking_level', width: 130,
+      render: (lv: string, e) => (
+        <Select
+          size="small"
+          style={{ width: 110 }}
+          value={lv ?? 'high'}
+          onChange={(v: string) => levelMut.mutate({ id: e.id, thinking_level: v })}
+          options={THINKING_LEVELS.map((l) => ({ value: l, label: l === 'high' ? 'high（最高）' : l }))}
+        />
+      ),
+    },
+    {
+      title: '启用', dataIndex: 'enabled', width: 70,
       render: (en: boolean, e) => <Switch size="small" checked={en} onChange={(v) => toggleMut.mutate({ id: e.id, enabled: v })} />,
     },
     {
@@ -136,14 +158,20 @@ function ModelsModal({ provider, onClose }: { provider: ModelProviderInfo | null
       open={provider !== null}
       footer={null}
       onCancel={onClose}
-      width={640}
+      width={720}
     >
-      <Form form={form} layout="inline" style={{ marginBottom: 12 }}>
+      <Form form={form} layout="inline" style={{ marginBottom: 12 }} initialValues={{ thinking_level: 'high' }}>
         <Form.Item name="name" rules={[{ required: true, message: '必填' }]}>
-          <Input placeholder="模型 ID，如 deepseek-flash" style={{ width: 240 }} />
+          <Input placeholder="模型 ID，如 deepseek-flash" style={{ width: 200 }} />
         </Form.Item>
         <Form.Item name="display_name">
-          <Input placeholder="显示名（可选）" style={{ width: 160 }} />
+          <Input placeholder="显示名（可选）" style={{ width: 140 }} />
+        </Form.Item>
+        <Form.Item name="thinking_level" rules={[{ required: true }]}>
+          <Select
+            style={{ width: 130 }}
+            options={THINKING_LEVELS.map((l) => ({ value: l, label: l === 'high' ? 'high（最高）' : l }))}
+          />
         </Form.Item>
         <Form.Item>
           <Button type="primary" loading={addMut.isPending}
@@ -154,7 +182,7 @@ function ModelsModal({ provider, onClose }: { provider: ModelProviderInfo | null
       </Form>
       <Table<ModelEntryInfo> rowKey="id" size="small" columns={columns} dataSource={list} pagination={false} />
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        删除/停用后，引用该模型的评测任务发起时会报「模型不存在或已停用」。
+        思考等级映射为 OpenAI 兼容 reasoning_effort 参数（off = 不发送）；删除/停用后，引用该模型的评测任务发起时会报「模型不存在或已停用」。
       </Typography.Text>
     </Modal>
   )

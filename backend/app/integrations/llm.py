@@ -15,8 +15,16 @@ def build_llm(
     model: str | None = None,
     temperature: float | None = None,
     max_retries: int = 2,
+    thinking_level: str | None = None,
 ) -> BaseChatModel:
-    """构建一个 ChatModel；参数缺省回落到全局 LLM_* 配置。"""
+    """构建一个 ChatModel；参数缺省回落到全局 LLM_* 配置。
+
+    thinking_level（off/low/medium/high）映射为 OpenAI 兼容 reasoning_effort 参数；
+    off/未设置不发送该参数（走模型服务端默认行为）。
+    """
+    extra: dict = {}
+    if thinking_level and thinking_level != "off":
+        extra["reasoning_effort"] = thinking_level  # langchain-openai 一等字段，显式传参
     return ChatOpenAI(
         base_url=base_url or settings.LLM_BASE_URL,
         api_key=api_key or settings.LLM_API_KEY,
@@ -24,6 +32,7 @@ def build_llm(
         temperature=settings.LLM_TEMPERATURE if temperature is None else temperature,
         max_retries=max_retries,
         timeout=300,
+        **extra,
     )
 
 

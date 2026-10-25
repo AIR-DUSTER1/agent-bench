@@ -21,6 +21,7 @@ class PromptAgent(BaseAgent):
             api_key=config.get("api_key"),
             model=config.get("model"),
             temperature=config.get("temperature", 0.0),
+            thinking_level=config.get("thinking_level"),
         )
         self.system = config.get("system_prompt", DEFAULT_SYSTEM)
         self.few_shot: list[dict] = config.get("few_shot", [])

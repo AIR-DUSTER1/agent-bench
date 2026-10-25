@@ -28,6 +28,7 @@ class ToolAgent(BaseAgent):
             api_key=config.get("api_key"),
             model=config.get("model"),
             temperature=config.get("temperature", 0.0),
+            thinking_level=config.get("thinking_level"),
         )
         tool_names = config.get("tools", list(BUILTIN_TOOLS.keys()))
         tools = [BUILTIN_TOOLS[n] for n in tool_names if n in BUILTIN_TOOLS]

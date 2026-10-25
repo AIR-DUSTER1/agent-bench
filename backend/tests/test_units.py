@@ -415,3 +415,25 @@ def test_resolve_llm_params_rejects_invalid():
         resolve_llm_params(db, {"model_id": 9})
     with _pytest.raises(ValueError):
         resolve_llm_params(db, {"model_id": 999})
+
+
+def test_build_llm_thinking_level_kwargs():
+    """思考等级映射：low/medium/high → reasoning_effort 一等字段；off/未设置为 None。"""
+    from app.integrations.llm import build_llm
+
+    assert build_llm(api_key="k", model="m", thinking_level="high").reasoning_effort == "high"
+    assert build_llm(api_key="k", model="m", thinking_level="low").reasoning_effort == "low"
+    assert build_llm(api_key="k", model="m", thinking_level="off").reasoning_effort is None
+    assert build_llm(api_key="k", model="m").reasoning_effort is None
+
+
+def test_resolve_llm_params_passes_thinking_level():
+    """解析器把模型条目的思考等级透传进 Agent 配置。"""
+    from app.integrations.model_registry import resolve_llm_params
+    from app.models.registry import ModelEntry, ModelProvider
+
+    provider = ModelProvider(id=1, name="P", base_url="http://x", api_key="k")
+    entry = ModelEntry(id=9, provider_id=1, name="m", thinking_level="medium")
+    db = _FakeDB({(ModelProvider, 1): provider, (ModelEntry, 9): entry})
+    cfg = resolve_llm_params(db, {"model_id": 9})
+    assert cfg["thinking_level"] == "medium" and cfg["model"] == "m"

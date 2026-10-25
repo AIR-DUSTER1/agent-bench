@@ -10,6 +10,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
 
+# 思考等级：映射为 OpenAI 兼容 reasoning_effort 参数；off = 不发送（模型默认行为）
+THINKING_LEVELS = ("off", "low", "medium", "high")
+
 
 class ModelProvider(TimestampMixin, Base):
     __tablename__ = "model_provider"
@@ -30,3 +33,4 @@ class ModelEntry(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128))  # 模型 ID，如 deepseek-flash
     display_name: Mapped[str] = mapped_column(String(128), default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    thinking_level: Mapped[str] = mapped_column(String(16), default="high")  # 思考等级，默认最高

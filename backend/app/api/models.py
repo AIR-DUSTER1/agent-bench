@@ -10,9 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models import ModelEntry, ModelProvider
+from app.models.registry import THINKING_LEVELS
 from app.schemas import ModelEntryCreate, ModelEntryUpdate, ProviderCreate, ProviderUpdate
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+
+
+def _check_thinking(level: str | None) -> None:
+    if level is not None and level not in THINKING_LEVELS:
+        raise HTTPException(400, f"thinking_level 必须是 {THINKING_LEVELS}")
 
 
 def _mask(key: str) -> str:
@@ -33,6 +39,7 @@ def _entry_out(db: Session, e: ModelEntry) -> dict:
         "id": e.id, "provider_id": e.provider_id,
         "provider_name": p.name if p else "?",
         "name": e.name, "display_name": e.display_name, "enabled": e.enabled,
+        "thinking_level": e.thinking_level or "high",
         "label": f"{p.name if p else '?'}/{e.name}",
         "created_at": e.created_at.isoformat(),
     }
@@ -84,13 +91,15 @@ def list_models(db: Session = Depends(get_db)) -> list[dict]:
 
 @router.post("", status_code=201)
 def create_model(body: ModelEntryCreate, db: Session = Depends(get_db)) -> dict:
+    _check_thinking(body.thinking_level)
     if not db.get(ModelProvider, body.provider_id):
         raise HTTPException(404, "供应商不存在")
     dup = db.query(ModelEntry).filter_by(provider_id=body.provider_id, name=body.name).first()
     if dup:
         raise HTTPException(409, f"该供应商下模型已存在: {body.name}")
     e = ModelEntry(provider_id=body.provider_id, name=body.name,
-                   display_name=body.display_name or body.name, enabled=body.enabled)
+                   display_name=body.display_name or body.name, enabled=body.enabled,
+                   thinking_level=body.thinking_level)
     db.add(e)
     db.commit()
     return _entry_out(db, e)
@@ -98,6 +107,7 @@ def create_model(body: ModelEntryCreate, db: Session = Depends(get_db)) -> dict:
 
 @router.put("/{model_id}")
 def update_model(model_id: int, body: ModelEntryUpdate, db: Session = Depends(get_db)) -> dict:
+    _check_thinking(body.thinking_level)
     e = db.get(ModelEntry, model_id)
     if not e:
         raise HTTPException(404, "模型不存在")

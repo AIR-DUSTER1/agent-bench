@@ -297,6 +297,7 @@ export interface ModelEntryInfo {
   name: string
   display_name: string
   enabled: boolean
+  thinking_level: string
   label: string
   created_at: string
 }

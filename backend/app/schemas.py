@@ -114,6 +114,7 @@ class ModelEntryCreate(BaseModel):
     name: str
     display_name: str = ""
     enabled: bool = True
+    thinking_level: str = "high"  # off/low/medium/high，默认最高
 
 
 class ModelEntryUpdate(BaseModel):
@@ -121,6 +122,7 @@ class ModelEntryUpdate(BaseModel):
     display_name: str | None = None
     enabled: bool | None = None
     provider_id: int | None = None
+    thinking_level: str | None = None
 
 
 # ---------- 标签 ----------
