@@ -417,14 +417,8 @@ def test_resolve_llm_params_rejects_invalid():
         resolve_llm_params(db, {"model_id": 999})
 
 
-def test_build_llm_thinking_level_kwargs():
-    """思考等级映射：low/medium/high → reasoning_effort 一等字段；off/未设置为 None。"""
-    from app.integrations.llm import build_llm
-
-    assert build_llm(api_key="k", model="m", thinking_level="high").reasoning_effort == "high"
-    assert build_llm(api_key="k", model="m", thinking_level="low").reasoning_effort == "low"
-    assert build_llm(api_key="k", model="m", thinking_level="off").reasoning_effort is None
-    assert build_llm(api_key="k", model="m").reasoning_effort is None
+# （旧 test_build_llm_thinking_level_kwargs 已被 test_build_llm_matches_profile 取代：
+#  思考参数是否发送由模型画像决定，不再对所有模型一律发 reasoning_effort）
 
 
 def test_resolve_llm_params_passes_thinking_level():
@@ -437,3 +431,68 @@ def test_resolve_llm_params_passes_thinking_level():
     db = _FakeDB({(ModelProvider, 1): provider, (ModelEntry, 9): entry})
     cfg = resolve_llm_params(db, {"model_id": 9})
     assert cfg["thinking_level"] == "medium" and cfg["model"] == "m"
+
+
+# ---------- 模型参数画像匹配 ----------
+
+def test_match_model_profile():
+    """常见模型按名称匹配到正确的参数家族。"""
+    from app.integrations.model_profiles import match_model_profile
+
+    cases = {
+        "deepseek-flash": "reasoning_effort",
+        "DeepSeek-Reasoner": "reasoning_effort",
+        "o3-mini": "reasoning_effort",
+        "gpt-5-mini": "reasoning_effort",
+        "gpt-4o": "none",
+        "gemini-2.5-pro": "reasoning_effort",
+        "grok-3": "reasoning_effort",
+        "qwen3-max": "enable_thinking",
+        "qwen2.5-72b-instruct": "enable_thinking",
+        "glm-4.7": "thinking_type",
+        "claude-sonnet-4": "none",
+        "kimi-k2": "none",
+        "moonshot-v1": "none",
+        "doubao-pro-32k": "none",
+        "llama-3.3-70b": "none",
+        "mystery-model-x": "none",  # 未登记家族 → 不发思考参数
+    }
+    for name, style in cases.items():
+        assert match_model_profile(name).thinking_style == style, name
+
+
+def test_thinking_kwargs_by_style():
+    """同一思考等级在不同家族翻译为不同参数；off 语义随家族。"""
+    from app.integrations.model_profiles import thinking_kwargs
+
+    # reasoning_effort：off 无法表达 → 不发送
+    assert thinking_kwargs("deepseek-flash", "high") == {"reasoning_effort": "high"}
+    assert thinking_kwargs("deepseek-flash", "off") == {}
+    assert thinking_kwargs("deepseek-flash", None) == {}
+    # Qwen：显式开关
+    assert thinking_kwargs("qwen3-max", "high") == {"enable_thinking": True}
+    assert thinking_kwargs("qwen3-max", "off") == {"enable_thinking": False}
+    # GLM：thinking.type 开关
+    assert thinking_kwargs("glm-4.7", "high") == {"thinking": {"type": "enabled"}}
+    assert thinking_kwargs("glm-4.7", "off") == {"thinking": {"type": "disabled"}}
+    # none 家族 / 未登记家族：不发
+    assert thinking_kwargs("claude-sonnet-4", "high") == {}
+    assert thinking_kwargs("mystery-x", "high") == {}
+
+
+def test_build_llm_matches_profile():
+    """build_llm 按画像组参：o 系剔除 temperature；qwen 走 model_kwargs；deepseek 走一等字段。"""
+    from app.integrations.llm import build_llm
+
+    o3 = build_llm(api_key="k", model="o3-mini", temperature=0.0, thinking_level="high")
+    assert o3.temperature is None and o3.reasoning_effort == "high"
+
+    ds = build_llm(api_key="k", model="deepseek-flash", temperature=0.0, thinking_level="high")
+    assert ds.temperature == 0.0 and ds.reasoning_effort == "high"
+
+    qwen = build_llm(api_key="k", model="qwen3-max", thinking_level="off")
+    assert qwen.model_kwargs == {"enable_thinking": False} and qwen.reasoning_effort is None
+
+    # 未登记家族 + 高思考：参数全部不发送，行为与旧版一致
+    mystery = build_llm(api_key="k", model="mystery-x", temperature=0.0, thinking_level="high")
+    assert mystery.reasoning_effort is None and mystery.model_kwargs == {} and mystery.temperature == 0.0

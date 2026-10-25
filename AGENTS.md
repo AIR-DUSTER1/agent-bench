@@ -48,6 +48,7 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 | 控制台页面/交互 | `frontend/src/pages/`（页面）+ `api.ts`（请求层）+ `types.ts`（响应类型与后端一一对应）；改完必须 `npm run build` 并提交 dist |
 | token 用量 | 采集在 `integrations/llm.py:extract_usage` + 各 Agent/Judge；归一与聚合**只能** `metrics.py:normalize_usage/sum_usage` |
 | 模型供应商/模型注册表 | ORM 在 `models/registry.py`，CRUD 在 `api/models.py`（key 回显脱敏）；解析**只能** `integrations/model_registry.py:resolve_llm_params`（优先级：run 覆盖 > 配置 model_id 引用 > 配置原生值 > .env 全局） |
+| 模型参数画像（思考等级→各家参数写法、temperature 支持度） | **只能** `integrations/model_profiles.py`：按模型名匹配家族，未登记家族一律不发思考参数（防严格网关 400）；新模型接入在此登记 |
 | 新增 API 端点 | `app/api/` + `schemas.py`，路由保持 REST 风格与现有命名 |
 
 ## 2. 核心不变量（改动前必须理解，破坏即引入线上事故级缺陷）

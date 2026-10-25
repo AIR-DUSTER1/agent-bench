@@ -7,6 +7,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
+from app.integrations.model_profiles import temperature_allowed, thinking_kwargs
 
 
 def build_llm(
@@ -19,20 +20,24 @@ def build_llm(
 ) -> BaseChatModel:
     """构建一个 ChatModel；参数缺省回落到全局 LLM_* 配置。
 
-    thinking_level（off/low/medium/high）映射为 OpenAI 兼容 reasoning_effort 参数；
-    off/未设置不发送该参数（走模型服务端默认行为）。
+    思考等级按模型家族自动匹配参数写法（见 model_profiles）；off/未设置不触碰模型默认。
+    不支持自定义 temperature 的家族（o 系/gpt-5）自动剔除该参数。
     """
-    extra: dict = {}
-    if thinking_level and thinking_level != "off":
-        extra["reasoning_effort"] = thinking_level  # langchain-openai 一等字段，显式传参
+    model = model or settings.LLM_MODEL
+    extra = thinking_kwargs(model, thinking_level)
+    effort = extra.pop("reasoning_effort", None)
+    kwargs: dict = {"max_retries": max_retries, "timeout": 300}
+    if temperature_allowed(model):
+        kwargs["temperature"] = settings.LLM_TEMPERATURE if temperature is None else temperature
+    if effort:
+        kwargs["reasoning_effort"] = effort  # langchain-openai 一等字段，显式传参
+    if extra:
+        kwargs["model_kwargs"] = extra
     return ChatOpenAI(
         base_url=base_url or settings.LLM_BASE_URL,
         api_key=api_key or settings.LLM_API_KEY,
-        model=model or settings.LLM_MODEL,
-        temperature=settings.LLM_TEMPERATURE if temperature is None else temperature,
-        max_retries=max_retries,
-        timeout=300,
-        **extra,
+        model=model,
+        **kwargs,
     )
 
 

@@ -182,7 +182,7 @@ function ModelsModal({ provider, onClose }: { provider: ModelProviderInfo | null
       </Form>
       <Table<ModelEntryInfo> rowKey="id" size="small" columns={columns} dataSource={list} pagination={false} />
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        思考等级映射为 OpenAI 兼容 reasoning_effort 参数（off = 不发送）；删除/停用后，引用该模型的评测任务发起时会报「模型不存在或已停用」。
+        思考等级按模型家族自动匹配参数（DeepSeek/OpenAI o 系 → reasoning_effort，Qwen → enable_thinking，GLM → thinking，其余家族不发送，off = 关闭思考）；删除/停用后，引用该模型的评测任务发起时会报「模型不存在或已停用」。
       </Typography.Text>
     </Modal>
   )
