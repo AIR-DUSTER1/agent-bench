@@ -12,7 +12,7 @@ import type { Dimension, ModelEntryInfo, ModelProviderInfo, Settings } from '../
 const API_FORMAT_LABELS: Record<string, string> = {
   openai_chat: 'OpenAI Chat',
   openai_responses: 'OpenAI Responses',
-  anthropic: 'Claude (Anthropic)',
+  anthropic: 'Claude',
 }
 
 function ProviderModal({ open, initial, onClose }: {
@@ -69,9 +69,9 @@ function ProviderModal({ open, initial, onClose }: {
           extra="OpenAI Chat 适用于绝大多数供应商与本地网关；Responses 仅 OpenAI 官方；Claude 走 Anthropic Messages 协议">
           <Select
             options={[
-              { value: 'openai_chat', label: 'OpenAI Chat（默认，兼容最广）' },
+              { value: 'openai_chat', label: 'OpenAI Chat' },
               { value: 'openai_responses', label: 'OpenAI Responses' },
-              { value: 'anthropic', label: 'Claude (Anthropic Messages)' },
+              { value: 'anthropic', label: 'Claude' },
             ]}
           />
         </Form.Item>
