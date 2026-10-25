@@ -32,6 +32,7 @@ class RagAgent(BaseAgent):
             model=config.get("model"),
             temperature=config.get("temperature", 0.0),
             thinking_level=config.get("thinking_level"),
+            api_format=config.get("api_format"),
         )
         self.top_k: int = int(config.get("top_k", 3))
         kb_dir = config.get("kb_dir") or DEFAULT_KB_DIR

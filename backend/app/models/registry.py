@@ -12,6 +12,9 @@ from app.models.base import Base, TimestampMixin
 
 # 思考等级：映射为 OpenAI 兼容 reasoning_effort 参数；off = 不发送（模型默认行为）
 THINKING_LEVELS = ("off", "low", "medium", "high")
+# 供应商接口协议：openai_chat = Chat Completions（默认，兼容绝大多数网关）；
+# openai_responses = OpenAI Responses API；anthropic = Claude Messages API
+API_FORMATS = ("openai_chat", "openai_responses", "anthropic")
 
 
 class ModelProvider(TimestampMixin, Base):
@@ -22,6 +25,7 @@ class ModelProvider(TimestampMixin, Base):
     base_url: Mapped[str] = mapped_column(String(256))
     api_key: Mapped[str] = mapped_column(Text, default="")  # 仅存库（backend/data/ 已 gitignore），回显一律脱敏
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    api_format: Mapped[str] = mapped_column(String(32), default="openai_chat")
 
 
 class ModelEntry(TimestampMixin, Base):

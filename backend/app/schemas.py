@@ -100,6 +100,7 @@ class ProviderCreate(BaseModel):
     base_url: str
     api_key: str = ""
     enabled: bool = True
+    api_format: str = "openai_chat"  # openai_chat | openai_responses | anthropic
 
 
 class ProviderUpdate(BaseModel):
@@ -107,6 +108,7 @@ class ProviderUpdate(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     enabled: bool | None = None
+    api_format: str | None = None
 
 
 class ModelEntryCreate(BaseModel):

@@ -496,3 +496,26 @@ def test_build_llm_matches_profile():
     # 未登记家族 + 高思考：参数全部不发送，行为与旧版一致
     mystery = build_llm(api_key="k", model="mystery-x", temperature=0.0, thinking_level="high")
     assert mystery.reasoning_effort is None and mystery.model_kwargs == {} and mystery.temperature == 0.0
+
+
+def test_build_llm_api_format_branches():
+    """三种接口协议构建出正确的客户端与参数。"""
+    from langchain_anthropic import ChatAnthropic
+    from langchain_openai import ChatOpenAI
+
+    from app.integrations.llm import build_llm
+
+    # 默认/显式 openai_chat：行为不变
+    chat = build_llm(api_key="k", model="deepseek-flash", thinking_level="high")
+    assert isinstance(chat, ChatOpenAI) and not chat.use_responses_api and chat.reasoning_effort == "high"
+    # openai_responses：同一 OpenAI 客户端切 Responses 端点
+    resp = build_llm(api_key="k", model="gpt-5-mini", thinking_level="high", api_format="openai_responses")
+    assert isinstance(resp, ChatOpenAI) and resp.use_responses_api and resp.reasoning_effort == "high"
+    # anthropic：思考开启 → thinking 预算 + max_tokens 大于预算 + 剔除 temperature（Anthropic 规则）
+    th = build_llm(api_key="k", model="claude-sonnet-4", api_format="anthropic", thinking_level="high")
+    assert isinstance(th, ChatAnthropic)
+    assert th.thinking == {"type": "enabled", "budget_tokens": 32768}
+    assert th.max_tokens > 32768 and th.temperature is None
+    # anthropic 思考关闭 → 不带 thinking，默认 max_tokens
+    plain = build_llm(api_key="k", model="claude-sonnet-4", api_format="anthropic")
+    assert isinstance(plain, ChatAnthropic) and not plain.thinking and plain.max_tokens == 4096

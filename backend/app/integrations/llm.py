@@ -1,4 +1,4 @@
-"""LLM 工厂：统一从配置构建被测模型与 Judge 模型（OpenAI 兼容协议）。"""
+"""LLM 工厂：统一从配置构建被测模型与 Judge 模型（OpenAI 兼容协议 / Anthropic 协议）。"""
 from __future__ import annotations
 
 from typing import Any
@@ -17,13 +17,26 @@ def build_llm(
     temperature: float | None = None,
     max_retries: int = 2,
     thinking_level: str | None = None,
+    api_format: str | None = None,
 ) -> BaseChatModel:
-    """构建一个 ChatModel；参数缺省回落到全局 LLM_* 配置。
+    """按供应商接口协议构建 ChatModel；参数缺省回落到全局 LLM_* 配置。
 
-    思考等级按模型家族自动匹配参数写法（见 model_profiles）；off/未设置不触碰模型默认。
-    不支持自定义 temperature 的家族（o 系/gpt-5）自动剔除该参数。
+    - openai_chat（默认）：Chat Completions，思考等级按模型家族画像映射（model_profiles）
+    - openai_responses：OpenAI Responses API（use_responses_api），reasoning_effort 语义同上
+    - anthropic：Claude Messages API，思考走 thinking.budget_tokens（low/medium/high 分档），
+      思考开启时按 Anthropic 规则剔除 temperature
     """
     model = model or settings.LLM_MODEL
+    fmt = api_format or "openai_chat"
+    if fmt == "anthropic":
+        return _build_anthropic(
+            base_url=base_url or settings.LLM_BASE_URL,
+            api_key=api_key or settings.LLM_API_KEY,
+            model=model,
+            max_retries=max_retries,
+            thinking_level=thinking_level,
+        )
+
     extra = thinking_kwargs(model, thinking_level)
     effort = extra.pop("reasoning_effort", None)
     kwargs: dict = {"max_retries": max_retries, "timeout": 300}
@@ -33,12 +46,36 @@ def build_llm(
         kwargs["reasoning_effort"] = effort  # langchain-openai 一等字段，显式传参
     if extra:
         kwargs["model_kwargs"] = extra
+    if fmt == "openai_responses":
+        kwargs["use_responses_api"] = True
     return ChatOpenAI(
         base_url=base_url or settings.LLM_BASE_URL,
         api_key=api_key or settings.LLM_API_KEY,
         model=model,
         **kwargs,
     )
+
+
+# Anthropic 思考预算分档（budget_tokens 下限 1024）；max_tokens 必须大于预算
+_ANTHROPIC_BUDGET = {"low": 1024, "medium": 8192, "high": 32768}
+
+
+def _build_anthropic(base_url: str, api_key: str, model: str, max_retries: int,
+                     thinking_level: str | None) -> BaseChatModel:
+    try:
+        from langchain_anthropic import ChatAnthropic
+    except ImportError as e:  # 未装依赖时给出可操作错误，而不是裸堆栈
+        raise RuntimeError("anthropic 接口类型需要安装 langchain-anthropic：pip install langchain-anthropic") from e
+
+    kwargs: dict = {"model": model, "api_key": api_key, "base_url": base_url, "max_retries": max_retries, "timeout": 300}
+    if thinking_level in _ANTHROPIC_BUDGET:
+        budget = _ANTHROPIC_BUDGET[thinking_level]
+        # Anthropic 规则：思考开启时 temperature 必须为 1，max_tokens > budget_tokens
+        kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        kwargs["max_tokens"] = budget + 4096
+    else:
+        kwargs["max_tokens"] = 4096
+    return ChatAnthropic(**kwargs)
 
 
 def build_judge_llm() -> BaseChatModel:

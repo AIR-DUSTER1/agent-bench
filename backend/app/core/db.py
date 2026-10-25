@@ -50,6 +50,11 @@ def init_db() -> None:
         "model_entry",
         {"thinking_level": "VARCHAR(16) DEFAULT 'high'"},
     )
+    _ensure_columns(
+        engine,
+        "model_provider",
+        {"api_format": "VARCHAR(32) DEFAULT 'openai_chat'"},
+    )
 
 
 def _ensure_columns(target_engine, table: str, columns: dict[str, str]) -> None:

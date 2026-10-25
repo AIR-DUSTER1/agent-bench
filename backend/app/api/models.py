@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models import ModelEntry, ModelProvider
-from app.models.registry import THINKING_LEVELS
+from app.models.registry import API_FORMATS, THINKING_LEVELS
 from app.schemas import ModelEntryCreate, ModelEntryUpdate, ProviderCreate, ProviderUpdate
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -21,6 +21,11 @@ def _check_thinking(level: str | None) -> None:
         raise HTTPException(400, f"thinking_level 必须是 {THINKING_LEVELS}")
 
 
+def _check_format(fmt: str | None) -> None:
+    if fmt is not None and fmt not in API_FORMATS:
+        raise HTTPException(400, f"api_format 必须是 {API_FORMATS}")
+
+
 def _mask(key: str) -> str:
     return (key[:6] + "***") if key and len(key) > 10 else ("***" if key else "")
 
@@ -28,6 +33,7 @@ def _mask(key: str) -> str:
 def _provider_out(p: ModelProvider, with_key_hint: bool = True) -> dict:
     return {
         "id": p.id, "name": p.name, "base_url": p.base_url, "enabled": p.enabled,
+        "api_format": p.api_format or "openai_chat",
         "api_key_masked": _mask(p.api_key) if with_key_hint else "",
         "created_at": p.created_at.isoformat(),
     }
@@ -52,9 +58,11 @@ def list_providers(db: Session = Depends(get_db)) -> list[dict]:
 
 @router.post("/providers", status_code=201)
 def create_provider(body: ProviderCreate, db: Session = Depends(get_db)) -> dict:
+    _check_format(body.api_format)
     if db.query(ModelProvider).filter_by(name=body.name).first():
         raise HTTPException(409, f"供应商已存在: {body.name}")
-    p = ModelProvider(name=body.name, base_url=body.base_url, api_key=body.api_key, enabled=body.enabled)
+    p = ModelProvider(name=body.name, base_url=body.base_url, api_key=body.api_key,
+                      enabled=body.enabled, api_format=body.api_format)
     db.add(p)
     db.commit()
     return _provider_out(p)
@@ -62,6 +70,7 @@ def create_provider(body: ProviderCreate, db: Session = Depends(get_db)) -> dict
 
 @router.put("/providers/{provider_id}")
 def update_provider(provider_id: int, body: ProviderUpdate, db: Session = Depends(get_db)) -> dict:
+    _check_format(body.api_format)
     p = db.get(ModelProvider, provider_id)
     if not p:
         raise HTTPException(404, "供应商不存在")

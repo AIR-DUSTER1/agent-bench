@@ -25,6 +25,8 @@ def resolve_llm_params(db: Session, config: dict, override_model_id: int | None 
     cfg["base_url"] = provider.base_url
     cfg["api_key"] = provider.api_key
     cfg["model"] = entry.name
+    if provider.api_format:
+        cfg["api_format"] = provider.api_format
     if entry.thinking_level:
         cfg["thinking_level"] = entry.thinking_level
     return cfg

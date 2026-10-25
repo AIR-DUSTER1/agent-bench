@@ -286,6 +286,7 @@ export interface ModelProviderInfo {
   name: string
   base_url: string
   enabled: boolean
+  api_format: string
   api_key_masked: string
   created_at: string
 }
