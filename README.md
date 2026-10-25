@@ -9,12 +9,15 @@
 - **自动阅卷**：用另一个 LLM 当裁判（Judge），按 5 个维度打分——准确性、安全性、流畅性、任务完成度、幻觉检测，每个维度都有明确的评分标准
 - **A/B 对比**：两个 Agent 做同一套题，逐题配对比较，并用统计检验告诉你差距是不是真的（不是运气）
 - **归因分析**：不只给分，还定位问题——是 Prompt 没写好、检索没查到、还是工具选错了，并给出修改建议
+- **Token 统计**：每次评测的 Agent 侧与 Judge 侧 token 消耗，逐样本明细 + 全局趋势（按日/按 Agent/按任务）
+- **评测集维护与升级**：草稿样本行内增删改、发布前 diff 预览（这次升级改了什么）、升级后一键复评并与历史结果逐题对比
 - **报告**：一份 HTML 报告（雷达图 + 分数分布 + 逐题明细），另有 Markdown 和 JSON
+- **管理界面**：React + Ant Design 的现代化控制台（七页：仪表盘 / Agent / 评测集 / 评测任务 / 统计 / 数据治理 / 系统设置）
 
 ## 快速开始
 
 ```bash
-# 1. 装依赖
+# 1. 装依赖（后端）
 cd backend
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt     # Windows；Linux/macOS 用 .venv/bin/pip
@@ -31,10 +34,23 @@ copy .env.example .env        # 填上你的 LLM_API_KEY（OpenAI 兼容接口�
 
 启动后：
 
-- **管理界面**：http://127.0.0.1:8000/ （发起评测、看报告、管数据集都在这，不需要敲 API）
+- **管理界面**：http://127.0.0.1:8000/ （发起评测、看报告、管数据集、看 token 统计都在这，不需要敲 API）
 - **API 文档**：http://127.0.0.1:8000/docs
 
 > 要对外提供服务时，在 `.env` 里设置 `AUTH_TOKEN`，所有 API 会要求 Bearer token。
+
+### 前端开发（改界面时才需要）
+
+仓库已提交构建产物（`backend/app/static/dist/`），纯使用无需 Node。要改前端：
+
+```bash
+cd frontend
+npm install
+npm run dev        # 开发模式：http://127.0.0.1:5173，/api 自动代理到 8000
+npm run build      # 构建并输出到 backend/app/static/dist（tsc 类型检查 + vite 打包）
+```
+
+技术栈：React 19 + TypeScript + Vite 7 + Ant Design 5 + ECharts 6 + TanStack Query。
 
 ## 接入你自己的 Agent
 
@@ -54,22 +70,24 @@ copy .env.example .env        # 填上你的 LLM_API_KEY（OpenAI 兼容接口�
 
 ## 几个概念，30 秒看完
 
-- **评测集**：一堆「输入 + 期望输出」。支持 JSON 批量导入（先预检再确认，格式问题会在预检时拦住）。发布后版本冻结，之后改题目不影响已跑过的结果——保证可复现
+- **评测集**：一堆「输入 + 期望输出」。支持 JSON 批量导入（先预检再确认，格式问题会在预检时拦住）。草稿随便改；发布后版本冻结，之后改题目不影响已跑过的结果——保证可复现
 - **评分维度**：默认 5 个维度，每个维度有详细的分档标准（Rubric）。可以自定义加维度
 - **Judge**：负责打分的 LLM。可以和被测 Agent 用不同的模型，避免"自己给自己打分"
 - **归因**：按 Agent 类型分层找原因。RAG 型查"检索有没有召回、回答有没有依据"，Tool 型查"工具有没有选对、SQL 对不对"，Prompt 型查"指令设计问题"
+- **升级验证**：数据集发布 v2 后，在旧任务的详情页点「复评（换数据集）」，跑完在「升级对比」页签选旧任务作基线，逐题看分数是升是降、差异是否显著
 
 ## 记分规则
 
 - 每个维度 0~5 分，加权汇总成总分（内置权重：准确性 1.5、任务完成度 1.2、幻觉 1.2、安全 1.0、流畅性 0.8）
 - 「通过」= 所有维度都不低于 3 分；Agent 调用失败直接算不通过
 - A/B 显著性：题目 ≥ 8 道用配对 t 检验，否则用 Wilcoxon；p < 0.05 视为差异显著
+- Token 口径：只统计模型精确上报的用量；拿不到精确值的调用单独计数（近似/未上报），不混进 token 总数冒充精确
 
 ## 其他你需要知道的
 
-- **数据库**：默认 SQLite（`backend/data/agent_bench.db`），零配置开箱即用。要换 MySQL，改 `.env` 里的 `DATABASE_URL` 即可
+- **数据库**：默认 SQLite（`backend/data/agent_bench.db`），零配置开箱即用。要换 MySQL，改 `.env` 里的 `DATABASE_URL` 即可（新列会自动迁移）
 - **追踪（可选）**：配置了 Langfuse 就上报到 Langfuse；不配置也没关系，trace 存本地 JSON（`backend/data/traces/`），功能完整可用
-- **测试**：`cd backend && .venv\Scripts\python -m pytest tests -q` —— 21 项离线单测，不调真实 LLM，不花 API 钱
+- **测试**：`cd backend && .venv\Scripts\python -m pytest tests -q` —— 27 项离线单测，不调真实 LLM，不花 API 钱
 
 ## 目录结构（想改代码时看）
 
@@ -81,8 +99,10 @@ backend/app/
 ├── attribution/   三层归因引擎
 ├── governance/    标签字典 / 数据质量校验
 ├── models/        数据库表定义
-├── core/          配置(.env) / 数据库连接
-└── integrations/  LLM 工厂 / Langfuse 追踪
+├── core/          配置(.env) / 数据库连接与轻量迁移
+├── integrations/  LLM 工厂 / Langfuse 追踪
+└── static/dist/   前端构建产物（源码在 frontend/）
+frontend/          React 控制台源码（React 19 + antd 5 + Vite）
 seed/              示例知识库、演示数据库、四套评测集
 scripts/           bootstrap.py 一键初始化
 ```

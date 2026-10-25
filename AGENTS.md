@@ -29,7 +29,8 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 | `app/agents/` | 五类 Agent 的执行适配，输出统一 `AgentOutput` | 不落库、不评分 |
 | `app/models/` | ORM 定义 | 不含业务逻辑 |
 | `app/integrations/` | LLM 工厂、Trace 上报（Langfuse/本地降级） | 不含业务判断 |
-| `app/core/` | 配置与 DB 会话 | 改配置只改 `.env` + `config.py`，禁止散落硬编码 |
+| `app/core/` | 配置与 DB 会话、幂等加列迁移 | 改配置只改 `.env` + `config.py`，禁止散落硬编码 |
+| `frontend/src/` | React 控制台（页面组件/请求层/类型） | 不写业务计算（口径一律后端 metrics.py 出）；不引第二个 UI 库 |
 | `seed/` `scripts/` | 种子数据与一次性脚本 | 不被运行时代码 import |
 
 **改动路由表**（改需求先定位这里，禁止跨层乱放）：
@@ -44,6 +45,8 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 | 新增 Agent 类型 | `agents/` 新建适配器 + `base.py:build_agent` 注册，必须实现 `AgentOutput` 契约（§2.3） |
 | 质检规则 | `governance/quality.py`，级别必须是 `blocker|warning` |
 | 标签字典 | `governance/tags.py` 的 `BUILTIN_TAG_DICT` 或 API 维护 |
+| 控制台页面/交互 | `frontend/src/pages/`（页面）+ `api.ts`（请求层）+ `types.ts`（响应类型与后端一一对应）；改完必须 `npm run build` 并提交 dist |
+| token 用量 | 采集在 `integrations/llm.py:extract_usage` + 各 Agent/Judge；归一与聚合**只能** `metrics.py:normalize_usage/sum_usage` |
 | 新增 API 端点 | `app/api/` + `schemas.py`，路由保持 REST 风格与现有命名 |
 
 ## 2. 核心不变量（改动前必须理解，破坏即引入线上事故级缺陷）
@@ -76,6 +79,12 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 ### 2.7 时间与时区
 数据库时间一律 UTC（`models/base.utcnow`）。展示层才转本地时间。
 
+### 2.8 前端安全与单一口径
+- React 默认转义是防线：**禁止 `dangerouslySetInnerHTML`**（`backend/tests/test_units.py` 有守卫测试）。渲染富文本需求走后端渲染或白名单方案，不走直插 DOM。
+- 后端响应的 TS 类型统一放 `frontend/src/types.ts`，与 `app/api/` 响应一一对应；改后端响应必须同步改类型。
+- 请求一律走 `frontend/src/api.ts`（Bearer token + 401 弹窗重试已统一），组件内禁止裸 `fetch`。
+- 构建产物 `backend/app/static/dist/` **提交入库**（部署机免 Node）；改前端必须 `npm run build` 后连 dist 一起提交，`tsc` 零错误是门槛。
+
 ## 3. 编码规范（可读性优先）
 
 - **语言**：代码、注释、文档统一中文；标识符英文。
@@ -102,7 +111,7 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 
 ## 5. 测试与验证
 
-- **单测离线原则**：`backend/tests/` 不得调用真实 LLM（不耗配额、不依赖网络）。新增引擎逻辑必须配离线单测（现有 15 项是模板：rubrics/metrics/quality/attribution/judge 解析/BM25）。
+- **单测离线原则**：`backend/tests/` 不得调用真实 LLM（不耗配额、不依赖网络）。新增引擎逻辑必须配离线单测（现有 27 项是模板：rubrics/metrics/quality/attribution/judge 解析/BM25/token 口径/diff 对齐/迁移幂等/前端安全守卫）。
 - 统计函数的数值必须对齐已知分布表值（t 分布表等）后才能合入。
 - 跑法：`cd backend && .venv\Scripts\python -m pytest tests -q`，**全绿是任何改动提交的前提**。
 - 真实评测属于集成验证：用控制台或 API 显式发起，先小数据集（≤3 样本）验证链路，再上全量。
@@ -124,6 +133,8 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 12. ❌ CORS 配置为 `*`：跨域必须显式白名单（`CORS_ORIGINS`），默认不启用 CORS
 13. ❌ 删除降级路径、删除工具只读防护、删除注入模式库条目
 14. ❌ 跳过测试提交；`git push` 未经用户明确要求不执行
+15. ❌ 前端使用 `dangerouslySetInnerHTML`、绕过 `api.ts` 裸 `fetch`、或在组件里重算统计口径（token/得分聚合一律后端 metrics.py）
+16. ❌ token 用量硬造数字：模型未上报就标 `none`，字符数近似标 `approx_chars`，禁止把近似值混入精确 token 合计（见 §2.8 与 metrics.normalize_usage）
 
 ## 7. Git 与交付
 
@@ -139,3 +150,5 @@ agents/ 五类 Agent 只实现"执行一件事"，不碰评分与归因
 - **加评测维度** → 优先运行时 API（`POST /api/dimensions`）；内置维度才动 `rubrics.py`。
 - **接入新的外部 Agent** → 判断 HTTP 还是 CLI → `external_http.py`/`external_cli.py` 已覆盖通用场景，通常只需注册 Agent + 配置；只有新协议才写新适配器，且必须产出 `AgentOutput`。
 - **排查评测失败** → 看 `run.error` → `backend/data/traces/<run_id>/` 本地 trace → 失败样本的 `DimensionScore.error` 与 `AttributionFinding.evidence`。
+- **改前端页面** → `frontend/src/` 改代码 → `npm run build`（tsc 零错误 + dist 更新）→ 连 dist 一起提交；浏览器冒烟 `/api/system/health` + 对应页面。
+- **加数据库列** → 改 `app/models/` 对应模型 → 在 `core/db.py:_ensure_columns` 的 `init_db` 注册（幂等加列）→ 写迁移单测（参考 `test_ensure_columns_migration_idempotent`）。
