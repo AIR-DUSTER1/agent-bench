@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import inspect
 import math
+from pathlib import Path
 
 from app.agents.retrieval import BM25Store, tokenize
 from app.attribution.engine import analyze_case, detect_prompt_injection, summarize_findings
@@ -196,3 +197,68 @@ def test_t_cdf_sanity():
     assert math.isclose(t_cdf(0.0, 10), 0.5, abs_tol=1e-6)
     assert t_cdf(5.0, 10) > 0.999
     assert t_cdf(-5.0, 10) < 0.001
+
+
+# ---------- 安全：calculator AST 求值器 ----------
+
+def test_calculator_safe_eval_basic():
+    from app.agents.tools.builtin import safe_arith
+
+    assert safe_arith("(128+72)*3/4") == 150
+    assert safe_arith("2**10") == 1024
+    assert safe_arith("-5+3") == -2
+    assert safe_arith("10 % 3") == 1
+
+
+def test_calculator_blocks_injection_and_dos():
+    from app.agents.tools.builtin import safe_arith
+
+    for evil in [
+        "__import__('os').system('dir')",   # 名称访问
+        "().__class__",                      # 属性逃逸
+        "9**9**9",                           # 指数塔内存耗尽
+        "99999**2",                          # 底数超限
+        "2**1000000",                        # 指数超限
+        "1+" * 200 + "1",                    # 超长
+    ]:
+        try:
+            safe_arith(evil)
+            raise AssertionError(f"应当拒绝: {evil}")
+        except (ValueError, SyntaxError):
+            pass
+
+
+# ---------- 安全：sql_query 只读黑名单 ----------
+
+def test_sql_tool_rejects_writes():
+    from app.agents.tools.builtin import sql_query
+
+    assert sql_query.invoke({"sql": "DELETE FROM sales WHERE 1=1"}).startswith("ERROR")
+    assert sql_query.invoke({"sql": "VACUUM INTO 'C:/x.db'"}).startswith("ERROR")
+    assert sql_query.invoke({"sql": "ATTACH DATABASE 'x' AS y"}).startswith("ERROR")
+    # 字符串字面量中的关键词不应误伤（词边界 + 剔除字面量）
+    ok = sql_query.invoke({"sql": "SELECT count(*) FROM products WHERE name LIKE '%update%'"})
+    assert not ok.startswith("ERROR")
+
+
+# ---------- 安全：报告 HTML 转义 ----------
+
+def test_report_env_escapes_untrusted_content():
+    from app.evaluation.report import ENV
+
+    out = ENV.from_string("{{ x }}").render(x="<script>alert(1)</script>")
+    assert "<script>" not in out and "&lt;script&gt;" in out
+    # tojson 输出在属性/脚本上下文安全
+    out2 = ENV.from_string("{{ x|tojson }}").render(x='"><script>')
+    assert "<script>" not in out2
+    # 图表函数返回受信 Markup，不被误转义
+    out3 = ENV.from_string("{{ radar(['a','b','c'], [1,2,3], '#000') }}").render()
+    assert out3.startswith("<svg")
+
+
+def test_console_html_escapes_agent_names():
+    """控制台对 agent 名的插值必须经 esc() 转义（防 onclick/属性逃逸）。"""
+    html = (Path(__file__).resolve().parents[1] / "app" / "static" / "index.html").read_text(encoding="utf-8")
+    # onclick 注入已改为 data-agent 属性 + esc 转义
+    assert "this.dataset.agent" in html
+    assert "JSON.stringify(JSON.stringify(a))" not in html

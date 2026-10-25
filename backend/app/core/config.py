@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     AGENT_TIMEOUT_SECONDS: int = 300  # 单样本 Agent 执行超时
     JUDGE_MAX_RETRIES: int = 2       # Judge 结构化输出解析失败重试次数
 
+    # 访问控制：AUTH_TOKEN 设置后，除 /api/system/health 外的所有 /api/* 需要
+    # Authorization: Bearer <token>（对外开放监听时必须设置）
+    AUTH_TOKEN: str = ""
+    # 跨域白名单（逗号分隔）；留空 = 不启用 CORS（仅同源访问，最安全默认）
+    CORS_ORIGINS: str = ""
+
     # Langfuse（可选；未配置时自动降级为本地 JSON Trace）
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""

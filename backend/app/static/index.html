@@ -46,9 +46,25 @@ a{color:var(--brand);text-decoration:none}
 
 <script>
 const $ = s => document.querySelector(s), view = $('#view'), dlg = $('#dlg'), dlgBody = $('#dlgBody');
-const api = (p, opt) => fetch('/api' + p, opt).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
-const post = (p, body) => api(p, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-const put = (p, body) => api(p, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+// 统一 API 访问：附带可选 Bearer Token；401 时提示补填后重试一次
+async function apiFetch(p, opt) {
+  opt = opt || {};
+  const token = localStorage.getItem('ab_token');
+  if (token) opt.headers = Object.assign({}, opt.headers, {Authorization: 'Bearer ' + token});
+  let r = await fetch('/api' + p, opt);
+  if (r.status === 401) {
+    const t = prompt('该服务已启用鉴权，请输入 AUTH_TOKEN：');
+    if (t) {
+      localStorage.setItem('ab_token', t);
+      opt.headers = Object.assign({}, opt.headers, {Authorization: 'Bearer ' + t});
+      r = await fetch('/api' + p, opt);
+    }
+  }
+  return r;
+}
+const api = (p, opt) => apiFetch(p, opt).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
+const post = (p, body) => apiFetch(p, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
+const put = (p, body) => apiFetch(p, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function openDlg(html){ dlgBody.innerHTML = html; dlg.showModal(); }
 function closeDlg(){ dlg.close(); }
@@ -93,7 +109,7 @@ async function agents(){
       <b style="font-size:15px">${esc(a.name)}</b>
       <span class="pill">${esc(a.type)} · ${AGENT_TYPE_DESC[a.type] || ''}</span>
       <span class="muted" style="flex:1">${esc(a.description)}</span>
-      <button class="ghost" onclick='testAgentDlg(${a.id}, ${JSON.stringify(JSON.stringify(a))})'>试跑</button>
+      <button class="ghost" data-agent="${esc(JSON.stringify(a))}" onclick="testAgentDlg(${a.id}, this.dataset.agent)">试跑</button>
     </div>
     <table><tr><th>版本</th><th>配置</th><th>说明</th><th>时间</th></tr>
     ${a.versions.map(v => `<tr><td><b>${v.version}</b> (#${v.id})</td>

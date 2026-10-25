@@ -159,10 +159,14 @@ def dist_bars(dim_name: str, values: list[float]) -> str:
 
 
 # ---------------- 模板 ----------------
+# autoescape 必须开启：报告回显被测 Agent 的不可信输出（评测平台天然含对抗样本），
+# 关闭即存储型 XSS（AGENTS.md §6）。图表函数返回的受信 SVG/HTML 用 Markup 显式放行。
 
-ENV = Environment(undefined=StrictUndefined, autoescape=False)
-ENV.globals["radar"] = radar_svg
-ENV.globals["dist"] = dist_bars
+from markupsafe import Markup  # noqa: E402
+
+ENV = Environment(undefined=StrictUndefined, autoescape=True)
+ENV.globals["radar"] = lambda *a, **k: Markup(radar_svg(*a, **k))
+ENV.globals["dist"] = lambda *a, **k: Markup(dist_bars(*a, **k))
 
 HTML_TMPL = """<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">

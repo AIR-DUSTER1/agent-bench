@@ -4,9 +4,9 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import agents, datasets, dimensions, governance, runs, system
@@ -26,12 +26,27 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.APP_NAME, version="1.0.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS 仅在显式配置白名单时启用（默认同源访问，无跨域面）
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """可选 Bearer 鉴权：AUTH_TOKEN 配置后，除健康检查外的 /api/* 一律校验。"""
+    if (
+        settings.AUTH_TOKEN
+        and request.url.path.startswith("/api")
+        and request.url.path != "/api/system/health"
+        and request.headers.get("authorization") != f"Bearer {settings.AUTH_TOKEN}"
+    ):
+        return JSONResponse({"detail": "unauthorized：缺少或错误的 Bearer token"}, status_code=401)
+    return await call_next(request)
 
 for r in (system, agents, datasets, dimensions, runs, governance):
     app.include_router(r.router)
