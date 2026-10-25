@@ -1,75 +1,128 @@
 import { useState } from 'react'
 import {
-  App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography,
+  App, Button, Card, Collapse, Form, Input, Modal, Select, Space, Table, Tag, Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, errText } from '../api'
 import type {
-  DatasetDetail, DatasetListItem, DatasetVersion, EvalCase,
+  DatasetDetail, DatasetListItem, DatasetVersion, DiffResult, EvalCase,
   ExportOut, ImportPreflight, ImportResult, PublishResult, QualitySummary,
 } from '../types'
 import { fmtTime } from '../format'
+import CaseFormDrawer from '../components/CaseFormDrawer'
 
 const TAG_COLORS: Record<string, string> = { easy: 'green', medium: 'gold', hard: 'red' }
 
-function CaseTable({ cases }: { cases: EvalCase[] }) {
+// ---------- 展示组件 ----------
+
+function TagPills({ tags }: { tags: Record<string, string> | undefined }) {
+  return (
+    <>
+      {Object.entries(tags ?? {}).map(([k, v]) => (
+        <Tag key={k}>{k}:{v}</Tag>
+      ))}
+    </>
+  )
+}
+
+function DiffView({ r }: { r: DiffResult }) {
+  const section = (title: string, rows: { input: string; detail: string }[], danger = false) => (
+    rows.length === 0 ? null : (
+      <div style={{ marginBottom: 12 }}>
+        <Typography.Text strong type={danger ? 'danger' : undefined}>{title}</Typography.Text>
+        <Table
+          rowKey={(i) => i.input + i.detail}
+          size="small"
+          pagination={false}
+          style={{ marginTop: 4 }}
+          dataSource={rows}
+          columns={[
+            { title: 'input', dataIndex: 'input', ellipsis: true },
+            { title: '说明', dataIndex: 'detail', ellipsis: true },
+          ]}
+        />
+      </div>
+    )
+  )
+  return (
+    <>
+      {section(`新增（${r.added.length}）`, r.added.map((c) => ({ input: c.input, detail: c.expected_output ?? '' })))}
+      {section(`删除（${r.removed.length}）`, r.removed.map((c) => ({ input: c.input, detail: c.expected_output ?? '' })), true)}
+      {section(
+        `修改（${r.changed.length}）`,
+        r.changed.map((ch) => ({
+          input: ch.new.input,
+          detail: `期望输出：${(ch.old.expected_output || '（空）').slice(0, 40)} → ${(ch.new.expected_output || '（空）').slice(0, 40)}`,
+        })),
+      )}
+      <Typography.Text type="secondary">未变化 {r.unchanged} 条</Typography.Text>
+      {r.added.length + r.removed.length + r.changed.length === 0 && (
+        <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>两个版本内容完全一致</Typography.Paragraph>
+      )}
+    </>
+  )
+}
+
+function CaseTable({ cases, editable, onEdit, onDelete, onAdd }: {
+  cases: EvalCase[]
+  editable?: boolean
+  onEdit?: (c: EvalCase) => void
+  onDelete?: (c: EvalCase) => void
+  onAdd?: () => void
+}) {
   const columns: TableColumnsType<EvalCase> = [
     { title: '#', dataIndex: 'seq', width: 50 },
     { title: '输入', dataIndex: 'input', ellipsis: true },
     { title: '期望输出', dataIndex: 'expected_output', ellipsis: true },
-    { title: '难度', dataIndex: 'difficulty', width: 80, render: (d: string) => <Tag color={TAG_COLORS[d] ?? 'default'}>{d}</Tag> },
-    {
-      title: '标签', dataIndex: 'tags', width: 200,
-      render: (tags: Record<string, string> | undefined) =>
-        Object.entries(tags ?? {}).map(([k, v]) => (
-          <Tag key={k}>{k}:{v}</Tag>
-        )),
-    },
+    { title: '难度', dataIndex: 'difficulty', width: 80, render: (d: string) => d ? <Tag color={TAG_COLORS[d] ?? 'default'}>{d}</Tag> : '-' },
+    { title: '标签', dataIndex: 'tags', width: 180, render: (t: Record<string, string> | undefined) => <TagPills tags={t} /> },
+    ...(editable
+      ? [{
+          title: '操作',
+          key: 'op',
+          width: 130,
+          render: (_: unknown, c: EvalCase) => (
+            <Space>
+              <Button size="small" type="link" onClick={() => onEdit?.(c)}>编辑</Button>
+              <Button size="small" type="link" danger onClick={() => onDelete?.(c)}>删除</Button>
+            </Space>
+          ),
+        } satisfies TableColumnsType<EvalCase>[number]]
+      : []),
   ]
   return (
-    <Table<EvalCase>
-      rowKey={(c) => String(c.id ?? c.seq)}
-      size="small"
-      columns={columns}
-      dataSource={cases}
-      pagination={cases.length > 15 ? { pageSize: 15 } : false}
-    />
-  )
-}
-
-function QualitySummaryView({ summary }: { summary: QualitySummary }) {
-  return (
     <>
-      <Typography.Paragraph>
-        阻断 <Typography.Text type="danger" strong>{summary.blockers}</Typography.Text>
-        {' · '}提醒 <Typography.Text type="warning" strong>{summary.warnings}</Typography.Text>
-      </Typography.Paragraph>
-      <Table
-        rowKey={(i) => `${i.rule}-${i.seq}-${i.detail}`}
+      {editable && (
+        <div style={{ marginBottom: 8 }}>
+          <Button size="small" type="primary" onClick={onAdd}>+ 新增样本</Button>
+          <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 10 }}>
+            仅草稿可编辑；发布版本不可变
+          </Typography.Text>
+        </div>
+      )}
+      <Table<EvalCase>
+        rowKey={(c) => String(c.id ?? c.seq)}
         size="small"
-        pagination={false}
-        dataSource={summary.issues}
-        columns={[
-          { title: '级别', dataIndex: 'level', width: 80, render: (l: string) => l === 'blocker' ? <Typography.Text type="danger">{l}</Typography.Text> : l },
-          { title: '规则', dataIndex: 'rule', width: 140 },
-          { title: '样本', dataIndex: 'seq', width: 60, render: (s: number | null) => (s == null ? '-' : `#${s}`) },
-          { title: '详情', dataIndex: 'detail' },
-        ]}
+        columns={columns}
+        dataSource={cases}
+        pagination={cases.length > 15 ? { pageSize: 15 } : false}
       />
     </>
   )
 }
 
+// ---------- 主页面 ----------
+
 export default function Datasets() {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const { data: datasets = [], isLoading } = useQuery({
     queryKey: ['datasets'],
     queryFn: () => api.get<DatasetListItem[]>('/datasets'),
   })
 
-  // 查看
+  // ---- 查看（含草稿编辑） ----
   const [viewId, setViewId] = useState<number | null>(null)
   const { data: viewDetail } = useQuery({
     queryKey: ['dataset', viewId],
@@ -87,8 +140,61 @@ export default function Datasets() {
     },
     enabled: viewId !== null && viewVersionId !== null,
   })
+  const invalidateView = () => {
+    void queryClient.invalidateQueries({ queryKey: ['dataset', viewId] })
+    void queryClient.invalidateQueries({ queryKey: ['dataset-version', viewId] })
+    void queryClient.invalidateQueries({ queryKey: ['datasets'] })
+  }
 
-  // 导入
+  // 样本增删改（仅草稿）
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [editing, setEditing] = useState<EvalCase | null>(null)
+  const saveCaseMut = useMutation({
+    mutationFn: (v: { input: string; expected_output?: string; difficulty?: string; tags: Record<string, string> }) =>
+      editing?.id
+        ? api.put(`/datasets/${viewId}/cases/${editing.id}`, v)
+        : api.post(`/datasets/${viewId}/cases`, v),
+    onSuccess: () => {
+      message.success(editing ? '已保存' : '已新增')
+      setDrawerOpen(false)
+      invalidateView()
+    },
+    onError: (e) => message.error(errText(e), 8),
+  })
+  const deleteCaseMut = useMutation({
+    mutationFn: (caseId: number) => api.del(`/datasets/${viewId}/cases/${caseId}`),
+    onSuccess: () => {
+      message.success('已删除')
+      invalidateView()
+    },
+    onError: (e) => message.error(errText(e), 8),
+  })
+  const confirmDelete = (c: EvalCase) => {
+    modal.confirm({
+      title: '删除该草稿样本？',
+      content: c.input.slice(0, 80),
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => c.id !== undefined && deleteCaseMut.mutate(c.id),
+    })
+  }
+
+  // ---- 版本对比 ----
+  const [diffOpen, setDiffOpen] = useState(false)
+  const [diffA, setDiffA] = useState<number | null>(null)
+  const [diffB, setDiffB] = useState<number | null>(null)
+  const diffQuery = useQuery({
+    queryKey: ['diff', viewId, diffA, diffB],
+    queryFn: () => api.get<DiffResult>(`/datasets/${viewId}/versions/${diffA}/diff/${diffB}`),
+    enabled: diffOpen && diffA !== null && diffB !== null,
+  })
+  const versionOptions = [
+    ...(viewDetail ? [{ value: viewDetail.draft.id, label: `草稿（${viewDetail.draft.case_count}）` }] : []),
+    ...(viewDetail?.versions ?? []).map((v) => ({ value: v.id, label: `${v.version}（${v.case_count}）` })),
+  ]
+
+  // ---- JSON 批量导入 ----
   const [importOpen, setImportOpen] = useState(false)
   const [importForm] = Form.useForm()
   const [importOut, setImportOut] = useState<string>('')
@@ -113,11 +219,17 @@ export default function Datasets() {
     onError: (e) => setImportOut('失败：' + errText(e)),
   })
 
-  // 发布 / 质检
+  // ---- 发布（带 diff 预览） ----
   const [publishId, setPublishId] = useState<number | null>(null)
   const [publishNote, setPublishNote] = useState('')
+  const { data: draftDiff } = useQuery({
+    queryKey: ['draft-diff', publishId],
+    queryFn: () => api.get<DiffResult>(`/datasets/${publishId}/draft-diff`),
+    enabled: publishId !== null,
+  })
   const publishMut = useMutation({
-    mutationFn: (id: number) => api.post<PublishResult>(`/datasets/${id}/publish`, { note: publishNote || 'console 发布' }),
+    mutationFn: (id: number) =>
+      api.post<PublishResult>(`/datasets/${id}/publish`, { note: publishNote || 'console 发布' }),
     onSuccess: (r) => {
       message.success(`已发布 ${r.version}（${r.case_count} 样本）`)
       setPublishId(null)
@@ -133,6 +245,7 @@ export default function Datasets() {
     },
   })
 
+  // ---- 质检 ----
   const [qualityId, setQualityId] = useState<number | null>(null)
   const [qualitySummary, setQualitySummary] = useState<QualitySummary | null>(null)
   const qualityMut = useMutation({
@@ -153,6 +266,8 @@ export default function Datasets() {
     a.click()
     URL.revokeObjectURL(a.href)
   }
+
+  const isDraftView = viewVersionId === 'draft'
 
   return (
     <>
@@ -177,7 +292,7 @@ export default function Datasets() {
           )}
           extra={(
             <Space wrap>
-              <Button size="small" onClick={() => { setViewId(d.id); setViewVersionId('draft') }}>查看</Button>
+              <Button size="small" onClick={() => { setViewId(d.id); setViewVersionId('draft') }}>查看 / 维护</Button>
               <Button size="small" onClick={() => { setQualityId(d.id); setQualitySummary(null); qualityMut.mutate(d.id) }}>质检</Button>
               <Button size="small" onClick={() => setPublishId(d.id)}>发布新版本</Button>
             </Space>
@@ -196,8 +311,23 @@ export default function Datasets() {
                 { title: '样本数', dataIndex: 'case_count', width: 100 },
                 { title: '发布时间', dataIndex: 'created_at', render: (t: string) => fmtTime(t) },
                 {
-                  title: '', key: 'export', width: 120,
-                  render: (_, v) => <Button size="small" type="link" onClick={() => void exportVersion(d.id, v)}>导出 JSON</Button>,
+                  title: '', key: 'export', width: 160,
+                  render: (_, v) => (
+                    <Space>
+                      <Button size="small" type="link" onClick={() => void exportVersion(d.id, v)}>导出 JSON</Button>
+                      <Button
+                        size="small" type="link"
+                        onClick={() => {
+                          setViewId(d.id)
+                          setDiffOpen(true)
+                          setDiffA(null)
+                          setDiffB(null)
+                        }}
+                      >
+                        版本对比
+                      </Button>
+                    </Space>
+                  ),
                 },
               ]}
             />
@@ -205,13 +335,13 @@ export default function Datasets() {
         </Card>
       ))}
 
-      {/* 查看：草稿或任一发布版本的样本明细 */}
+      {/* 查看 / 维护草稿 */}
       <Modal
-        title={`${viewDetail?.name ?? ''} · 样本明细`}
+        title={`${viewDetail?.name ?? ''} · 样本${isDraftView ? '维护' : '明细'}`}
         open={viewId !== null}
         footer={null}
         onCancel={() => setViewId(null)}
-        width={860}
+        width={900}
       >
         <Space style={{ marginBottom: 10 }}>
           <Select
@@ -225,7 +355,41 @@ export default function Datasets() {
             ]}
           />
         </Space>
-        {versionCases.data?.cases && <CaseTable cases={versionCases.data.cases} />}
+        {versionCases.data?.cases && (
+          <CaseTable
+            cases={versionCases.data.cases}
+            editable={isDraftView}
+            onEdit={(c) => { setEditing(c); setDrawerOpen(true) }}
+            onDelete={confirmDelete}
+            onAdd={() => { setEditing(null); setDrawerOpen(true) }}
+          />
+        )}
+      </Modal>
+
+      <CaseFormDrawer
+        open={drawerOpen}
+        initial={editing}
+        saving={saveCaseMut.isPending}
+        onClose={() => setDrawerOpen(false)}
+        onSave={(v) => saveCaseMut.mutate(v)}
+      />
+
+      {/* 版本对比 */}
+      <Modal
+        title="版本对比（以 input 为对齐键）"
+        open={diffOpen}
+        footer={null}
+        onCancel={() => setDiffOpen(false)}
+        width={820}
+      >
+        <Space style={{ marginBottom: 12 }}>
+          <Select style={{ width: 220 }} placeholder="旧版本" value={diffA ?? undefined}
+            onChange={(v) => setDiffA(v)} options={versionOptions} />
+          <span>→</span>
+          <Select style={{ width: 220 }} placeholder="新版本" value={diffB ?? undefined}
+            onChange={(v) => setDiffB(v)} options={versionOptions} />
+        </Space>
+        {diffQuery.isLoading ? null : diffQuery.data ? <DiffView r={diffQuery.data} /> : null}
       </Modal>
 
       {/* JSON 批量导入（预检 → 确认） */}
@@ -265,11 +429,11 @@ export default function Datasets() {
         )}
       </Modal>
 
-      {/* 发布 */}
+      {/* 发布（先看 diff） */}
       <Modal
         title="发布新版本"
         open={publishId !== null}
-        okText="发布"
+        okText="确认发布"
         cancelText="取消"
         confirmLoading={publishMut.isPending}
         onCancel={() => setPublishId(null)}
@@ -278,6 +442,25 @@ export default function Datasets() {
         <Typography.Paragraph type="secondary">
           将把当前草稿复制为不可变快照（发布前会跑质检，存在阻断则拒绝）。
         </Typography.Paragraph>
+        {draftDiff && (
+          <div style={{ marginBottom: 10 }}>
+            <Typography.Text strong>相对上一版本：</Typography.Text>{' '}
+            <Tag color="green">+{draftDiff.added.length} 新增</Tag>
+            <Tag color="red">-{draftDiff.removed.length} 删除</Tag>
+            <Tag color="gold">~{draftDiff.changed.length} 修改</Tag>
+            <Tag>{draftDiff.unchanged} 不变</Tag>
+            {(draftDiff.added.length + draftDiff.removed.length + draftDiff.changed.length > 0) && (
+              <Collapse
+                size="small"
+                style={{ marginTop: 8 }}
+                items={[{
+                  key: 'detail', label: '展开明细',
+                  children: <DiffView r={draftDiff} />,
+                }]}
+              />
+            )}
+          </div>
+        )}
         <Input.TextArea
           rows={2}
           placeholder="版本备注（可选）"
@@ -295,7 +478,24 @@ export default function Datasets() {
         width={760}
       >
         {qualitySummary ? (
-          <QualitySummaryView summary={qualitySummary} />
+          <>
+            <Typography.Paragraph>
+              阻断 <Typography.Text type="danger" strong>{qualitySummary.blockers}</Typography.Text>
+              {' · '}提醒 <Typography.Text type="warning" strong>{qualitySummary.warnings}</Typography.Text>
+            </Typography.Paragraph>
+            <Table
+              rowKey={(i) => `${i.rule}-${i.seq}-${i.detail}`}
+              size="small"
+              pagination={false}
+              dataSource={qualitySummary.issues}
+              columns={[
+                { title: '级别', dataIndex: 'level', width: 80, render: (l: string) => l === 'blocker' ? <Typography.Text type="danger">{l}</Typography.Text> : l },
+                { title: '规则', dataIndex: 'rule', width: 140 },
+                { title: '样本', dataIndex: 'seq', width: 60, render: (s: number | null) => (s == null ? '-' : `#${s}`) },
+                { title: '详情', dataIndex: 'detail' },
+              ]}
+            />
+          </>
         ) : (
           <Typography.Text type="secondary">质检完成（结果见上方提示）</Typography.Text>
         )}

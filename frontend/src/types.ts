@@ -103,6 +103,13 @@ export interface ExportOut {
   cases: EvalCase[]
 }
 
+export interface DiffResult {
+  added: EvalCase[]
+  removed: EvalCase[]
+  changed: { old: EvalCase; new: EvalCase }[]
+  unchanged: number
+}
+
 export interface RunSide {
   agent_version_id: number
   version: string

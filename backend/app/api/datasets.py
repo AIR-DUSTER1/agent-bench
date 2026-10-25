@@ -278,3 +278,59 @@ def export_version(ds_id: int, v_id: int, db: Session = Depends(get_db)) -> dict
         c.pop("id", None)
         c.pop("seq", None)
     return {"dataset": v.dataset.name, "version": v.version, "cases": cases}
+
+
+# ---------- 版本对比（升级可视化） ----------
+
+def diff_cases(old: list[dict], new: list[dict]) -> dict:
+    """以 input 文本为对齐键对比两版样本：新增/删除/修改（期望输出/难度/标签变化）。
+
+    纯函数、乱序稳定；input 相同即视为同一样本（与 replay 对比口径一致）。
+    """
+    old_map = {c["input"]: c for c in old}
+    new_map = {c["input"]: c for c in new}
+
+    def sig(c: dict) -> tuple:
+        return (c.get("expected_output"), c.get("difficulty"), c.get("tags") or {})
+
+    added = [c for k, c in new_map.items() if k not in old_map]
+    removed = [c for k, c in old_map.items() if k not in new_map]
+    changed = [
+        {"old": old_map[k], "new": c}
+        for k, c in new_map.items()
+        if k in old_map and sig(old_map[k]) != sig(c)
+    ]
+    return {
+        "added": added, "removed": removed, "changed": changed,
+        "unchanged": len(new_map) - len(added) - len(changed),
+    }
+
+
+def _version_cases(db: Session, ds_id: int, v_id: int) -> tuple[DatasetVersion, list[dict]]:
+    v = db.get(DatasetVersion, v_id)
+    if not v or v.dataset_id != ds_id:
+        raise HTTPException(404, "版本不存在")
+    return v, [_case_out(c) for c in sorted(v.cases, key=lambda x: x.seq)]
+
+
+@router.get("/{ds_id}/versions/{a_id}/diff/{b_id}")
+def diff_versions(ds_id: int, a_id: int, b_id: int, db: Session = Depends(get_db)) -> dict:
+    """任意两个版本对比（a=旧，b=新；可含 draft）。"""
+    _, old_cases = _version_cases(db, ds_id, a_id)
+    _, new_cases = _version_cases(db, ds_id, b_id)
+    return diff_cases(old_cases, new_cases)
+
+
+@router.get("/{ds_id}/draft-diff")
+def diff_draft(ds_id: int, db: Session = Depends(get_db)) -> dict:
+    """草稿相对最近已发布版本的 diff——发布前预览「这次升级改了什么」。"""
+    ds = db.get(Dataset, ds_id)
+    if not ds:
+        raise HTTPException(404, "数据集不存在")
+    draft = _get_draft(db, ds)
+    published = [v for v in ds.versions if v.version != "draft"]
+    if not published:
+        return diff_cases([], [_case_out(c) for c in sorted(draft.cases, key=lambda x: x.seq)])
+    latest = max(published, key=lambda v: int(v.version.lstrip("v")))
+    _, old_cases = _version_cases(db, ds_id, latest.id)
+    return diff_cases(old_cases, [_case_out(c) for c in sorted(draft.cases, key=lambda x: x.seq)])

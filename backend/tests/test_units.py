@@ -332,3 +332,32 @@ def test_ensure_columns_migration_idempotent():
     _ensure_columns(eng, "case_result", {"judge_usage": "TEXT DEFAULT '{}'"})
     cols = {c["name"] for c in inspect(eng).get_columns("case_result")}
     assert "judge_usage" in cols
+
+
+def test_diff_cases_alignment():
+    """版本 diff：以 input 为键的新增/删除/修改识别，乱序稳定。"""
+    from app.api.datasets import diff_cases
+
+    old = [
+        {"input": "q1", "expected_output": "a1", "difficulty": "easy", "tags": {}},
+        {"input": "q2", "expected_output": "a2", "difficulty": "easy", "tags": {}},
+    ]
+    new = [
+        {"input": "q3", "expected_output": "a3", "difficulty": "hard", "tags": {}},
+        {"input": "q2", "expected_output": "a2-fix", "difficulty": "easy", "tags": {}},
+    ]
+    d = diff_cases(old, new)
+    assert [c["input"] for c in d["added"]] == ["q3"]
+    assert [c["input"] for c in d["removed"]] == ["q1"]
+    assert len(d["changed"]) == 1
+    assert d["changed"][0]["new"]["expected_output"] == "a2-fix"
+    assert d["unchanged"] == 0
+
+    # 完全一致
+    same = diff_cases(old, [dict(c) for c in old])
+    assert not same["added"] and not same["removed"] and not same["changed"] and same["unchanged"] == 2
+
+    # 仅 tags 变化也计为修改
+    tag_changed = [dict(old[0], tags={"risk": "high"}), old[1]]
+    d3 = diff_cases(old, tag_changed)
+    assert len(d3["changed"]) == 1 and d3["unchanged"] == 1
