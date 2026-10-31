@@ -62,7 +62,7 @@ def get_agent(agent_id: int, db: Session = Depends(get_db)) -> dict:
 @router.post("/{agent_id}/versions", status_code=201)
 def add_version(agent_id: int, body: AgentVersionCreate, db: Session = Depends(get_db)) -> dict:
     a = _get_agent_or_404(db, agent_id)
-    nums = [int(v.version.lstrip("v")) for v in (x.version for x in a.versions)]
+    nums = [int(v.version.lstrip("v")) for v in a.versions]
     new_v = f"v{max(nums, default=0) + 1}"
     av = AgentVersion(agent_id=a.id, version=new_v,
                       config=json.dumps(body.config, ensure_ascii=False), note=body.note)

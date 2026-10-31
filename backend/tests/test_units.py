@@ -538,3 +538,42 @@ def test_build_llm_api_format_branches():
     # anthropic 思考关闭 → 不带 thinking，默认 max_tokens
     plain = build_llm(api_key="k", model="claude-sonnet-4", api_format="anthropic")
     assert isinstance(plain, ChatAnthropic) and not plain.thinking and plain.max_tokens == 4096
+
+
+# ---------- external_http 适配器 ----------
+
+def test_external_http_session_permission_and_sse():
+    """session_permission 配置：建会话后调用权限端点；SSE 解析 token/usage/tool_call。"""
+    import httpx as _httpx
+    from app.agents.external_http import ExternalHttpAgent
+
+    calls = []
+
+    def handler(request: _httpx.Request) -> _httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/api/sessions":
+            return _httpx.Response(200, json={"id": "s1"})
+        if request.url.path == "/api/sessions/s1/permission":
+            return _httpx.Response(200, json={"ok": True})
+        sse = (
+            'data: {"type":"token","text":"你好"}\n\n'
+            'data: {"type":"tool_call","name":"bash","argsFragment":"ls"}\n\n'
+            'data: {"type":"usage","inputTokens":11,"outputTokens":7}\n\n'
+            'data: {"type":"done"}\n\n'
+        )
+        return _httpx.Response(200, text=sse)
+
+    agent = ExternalHttpAgent({
+        "base_url": "http://fake", "protocol": "learn_agent_sse",
+        "session_permission": "autonomous", "timeout": 5,
+    })
+    agent._client = _httpx.AsyncClient(transport=_httpx.MockTransport(handler))
+
+    import asyncio
+    out = asyncio.run(agent.run("hi"))
+
+    assert ("POST", "/api/sessions/s1/permission") in calls, "权限端点未被调用"
+    assert out.output == "你好"
+    assert out.token_usage == {"input": 11, "output": 7}
+    assert out.intermediate[0]["type"] == "tool_call" and out.intermediate[0]["name"] == "bash"
+    assert not out.error

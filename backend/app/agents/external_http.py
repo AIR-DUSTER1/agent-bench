@@ -1,18 +1,24 @@
 """外部 HTTP Agent 适配器：把任意 HTTP 聊天服务接入评测。
 
 支持两种协议（config.protocol）：
-- learn_agent_sse：POST /api/sessions 建会话 → POST /api/chat SSE 流式返回（learn-agent 项目）
+- learn_agent_sse：POST /api/sessions 建会话 → POST /api/chat SSE 流式返回（learn-agent/agent-atlas 项目）
 - plain_post：POST chat_url {message} → JSON 取 output_field（简单服务）
+
+可选 config.session_permission：建会话后立即设置会话权限模式
+（POST {sessions_path}/{id}/permission {"mode": ...}，用于带审批流的 Agent 在无人值守评测中放开执行）。
 """
 from __future__ import annotations
 
 import json
+import logging
 import time
 
 import httpx
 
 from app.agents.base import AgentOutput, BaseAgent
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class ExternalHttpAgent(BaseAgent):
@@ -25,6 +31,7 @@ class ExternalHttpAgent(BaseAgent):
         self.sessions_path: str = config.get("sessions_path", "/api/sessions")
         self.chat_path: str = config.get("chat_path", "/api/chat")
         self.session_body: dict = config.get("session_body", {"kind": "agent"})
+        self.session_permission: str = config.get("session_permission", "")
         self.auth_token: str = config.get("auth_token", "")
         self.output_field: str = config.get("output_field", "output")
         self.timeout: int = int(config.get("timeout", settings.AGENT_TIMEOUT_SECONDS))
@@ -42,6 +49,11 @@ class ExternalHttpAgent(BaseAgent):
             if self.protocol == "learn_agent_sse":
                 return await self._run_learn_agent(case_input, t0)
             return await self._run_plain(case_input, t0)
+        except httpx.HTTPStatusError as e:
+            # 非 2xx 时把服务端的错误 body 带回来（只看状态码无法定位，如 400 的具体原因）
+            body = e.response.text[:300] if e.response is not None else ""
+            return AgentOutput(error=f"{e.response.status_code if e.response is not None else 'HTTP'}: {body}",
+                               latency_ms=int((time.perf_counter() - t0) * 1000))
         except Exception as e:  # noqa: BLE001
             return AgentOutput(error=f"{type(e).__name__}: {e}", latency_ms=int((time.perf_counter() - t0) * 1000))
 
@@ -55,6 +67,15 @@ class ExternalHttpAgent(BaseAgent):
         if not session_id:
             raise RuntimeError(f"建会话失败: {resp.text[:200]}")
 
+        # 2) 可选：设置会话权限模式（带审批流的 Agent 无人值守评测时放开执行）
+        #    权限设置失败只记日志不中断——部分实现没有该端点
+        if self.session_permission:
+            perm = await self._client.post(
+                f"{self.base_url}{self.sessions_path}/{session_id}/permission",
+                json={"mode": self.session_permission}, headers=self._headers(),
+            )
+            if perm.status_code >= 400:
+                logger.warning("会话权限设置被拒（%s），按默认权限继续", perm.status_code)
         # 2) 发消息，解析 SSE
         text_parts: list[str] = []
         intermediate: list[dict] = []
