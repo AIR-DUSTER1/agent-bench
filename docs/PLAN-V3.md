@@ -1,7 +1,7 @@
 # V3 计划：HF 三数据集测评问题整改
 
-> 状态：待审核。来源：Run #7/8/9（grug-think / GLM-5.2-Agent / glm-5.2-coding，各 10 样本）暴露的 6 类问题。
-> 批准后按里程碑执行，每个里程碑独立提交。
+> 状态：✅ 已执行完成。来源：Run #7/8/9（grug-think / GLM-5.2-Agent / glm-5.2-coding，各 10 样本）暴露的 6 类问题。
+> 执行记录：M1=c27a5c8（护栏/归因 API/超时标注）、M2=eb7efeb（import_hf/要点改写，v2 发布 8/4/5 样本）、M3=重测 Run #19/20/21（DSML=0，Prompt-Agent coding 通过率 70%→100%）。
 
 ## 一、问题清单与根因（测评复盘）
 
