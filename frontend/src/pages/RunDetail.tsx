@@ -6,7 +6,7 @@ import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, errText } from '../api'
-import type { CompareResult, DatasetListItem, EvalRun, FindingsResponse, RunTokens, TokenRow } from '../types'
+import type { CompareResult, DatasetListItem, EvalRun, FindingItem, FindingsResponse, RunTokens, TokenRow } from '../types'
 import { StatusTag, fmtTime } from '../format'
 import Chart from '../components/Chart'
 
@@ -264,15 +264,17 @@ function FindingsPanel({ runId }: { runId: number }) {
 }
 
 // R6：P95 超时预算占用 >80% 时提示接近截断边界
+type ReportSummaryResp = { summary: { sides: { agg: { timeout_budget_used: number | null } }[] } }
+
 function TimeoutRiskBadge({ runId, enabled }: { runId: number; enabled: boolean }) {
   const { data } = useQuery({
     queryKey: ['report', runId],
-    queryFn: () => api.get<{ summary: { sides: { agg: { timeout_budget_used: number | null }[] } } }>(`/runs/${runId}/report`),
+    queryFn: async (): Promise<ReportSummaryResp> => api.get<ReportSummaryResp>(`/runs/${runId}/report`),
     enabled,
     retry: false,
   })
   const sides = data?.summary.sides
-  const used = (sides ?? []).map((s: { agg: { timeout_budget_used: number | null } }) => s.agg.timeout_budget_used ?? 0)
+  const used = sides === undefined ? [] : sides.map((s) => s.agg.timeout_budget_used ?? 0)
   const risky = used.length ? Math.max(...used) : 0
   if (!enabled || risky <= 0.8) return null
   return (

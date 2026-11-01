@@ -619,3 +619,58 @@ def test_aggregate_timeout_budget_field():
     assert agg["timeout_budget_used"] is not None and agg["timeout_budget_used"] > 0.8
     fast = aggregate([dict(base, latency_ms=100)], dims)
     assert fast["timeout_budget_used"] is not None and fast["timeout_budget_used"] < 0.1
+
+
+# ---------- V3-M2：import_hf 纯函数 ----------
+
+def _load_import_hf():
+    """从 scripts/ 加载一次性脚本，验证其中的纯函数（不经网络）。"""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "scripts" / "import_hf.py"
+    spec = importlib.util.spec_from_file_location("import_hf", str(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_import_hf_pick_template_and_extract():
+    mod = _load_import_hf()
+    assert mod.pick_template({"prompt": "string", "messages": []}) == "prompt_messages"
+    assert mod.pick_template({"messages": []}) == "messages"
+
+    # 对话型：剥 <think>、跳过工具收尾的未完成轨迹
+    row_ok = {"messages": [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "问题"},
+        {"role": "assistant", "content": "<think>x</think>", "tool_calls": [{"id": "c"}]},
+        {"role": "assistant", "content": "最终答案是 42：根据给定条件逐步计算，先取基数，再做两次修正，最后得到结果并验证无误，过程完整可复核。"},
+    ]}
+    case = mod.extract_case(row_ok, "messages")
+    assert case["input"] == "问题" and "最终答案是" in case["expected_output"]
+    row_open = {"messages": [
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "c"}]},
+    ]}
+    assert mod.extract_case(row_open, "messages") is None
+
+    # 会话型：prompt 字段为输入，取最后一条非空 assistant
+    row_pm = {"prompt": "任务", "messages": [
+        {"role": "user", "content": "任务"},
+        {"role": "assistant", "content": "实现计划：先建目录结构，再写组件，最后补状态管理与本地持久化，附运行说明。", "reasoning_content": "思考"},
+    ]}
+    case_pm = mod.extract_case(row_pm, "prompt_messages")
+    assert case_pm["input"] == "任务" and "实现计划" in case_pm["expected_output"]
+
+
+def test_import_hf_dedupe_and_tags():
+    mod = _load_import_hf()
+    assert len(mod.dedupe_cases([{"input": "a"}, {"input": "a"}, {"input": "b"}])) == 2
+    assert mod.map_tag_value("编程") == "编码"
+    assert mod.map_tag_value("编码") == "编码"  # 幂等
+
+    cases = mod.to_cases(
+        [{"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a" * 40}]}] * 3,
+        "messages", 10, None, "test/ds")
+    assert len(cases) == 1, "同 input 去重后只留 1 条"
+    assert cases[0]["tags"]["domain"] == "通用" and cases[0]["meta"]["source"] == "hf:test/ds"

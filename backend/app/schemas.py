@@ -47,6 +47,7 @@ class CaseUpdate(BaseModel):
     tools_spec: dict | None = None
     difficulty: str | None = None
     tags: dict | None = None
+    meta: dict | None = None
 
 
 class ImportIn(BaseModel):
