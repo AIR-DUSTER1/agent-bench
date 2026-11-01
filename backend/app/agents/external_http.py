@@ -6,6 +6,8 @@
 
 可选 config.session_permission：建会话后立即设置会话权限模式
 （POST {sessions_path}/{id}/permission {"mode": ...}，用于带审批流的 Agent 在无人值守评测中放开执行）。
+可选 config.headless：为 True 时 POST /api/chat 额外携带 {"headless": true}
+（agent-atlas 0.9.0-beta.2+：澄清不挂起等 resume，自动采用默认假设继续执行）。
 """
 from __future__ import annotations
 
@@ -32,6 +34,7 @@ class ExternalHttpAgent(BaseAgent):
         self.chat_path: str = config.get("chat_path", "/api/chat")
         self.session_body: dict = config.get("session_body", {"kind": "agent"})
         self.session_permission: str = config.get("session_permission", "")
+        self.headless: bool = bool(config.get("headless", False))
         self.auth_token: str = config.get("auth_token", "")
         self.output_field: str = config.get("output_field", "output")
         self.timeout: int = int(config.get("timeout", settings.AGENT_TIMEOUT_SECONDS))
@@ -80,11 +83,15 @@ class ExternalHttpAgent(BaseAgent):
         text_parts: list[str] = []
         intermediate: list[dict] = []
         usage: dict = {}
+        saw_task_usage = False
         error = ""
+        chat_body: dict = {"sessionId": session_id, "message": case_input}
+        if self.headless:
+            chat_body["headless"] = True
         async with self._client.stream(
             "POST",
             self.base_url + self.chat_path,
-            json={"sessionId": session_id, "message": case_input},
+            json=chat_body,
             headers=self._headers(),
         ) as res:
             res.raise_for_status()
@@ -110,11 +117,19 @@ class ExternalHttpAgent(BaseAgent):
                             "args": {"fragment": ev.get("argsFragment", "")},
                             "result": None, "ok": True,
                         })
-                    elif et == "usage":
+                    elif et == "task_usage":
+                        # 轮末任务级终值（含内部辅助调用），优先于每调用快照
+                        saw_task_usage = True
                         usage = {
                             "input": ev.get("inputTokens", 0),
                             "output": ev.get("outputTokens", 0),
                         }
+                    elif et == "usage":
+                        if not saw_task_usage:
+                            usage = {
+                                "input": ev.get("inputTokens", 0),
+                                "output": ev.get("outputTokens", 0),
+                            }
                     elif et == "error":
                         error = str(ev.get("error") or ev.get("message") or "unknown")
         output = "".join(text_parts)

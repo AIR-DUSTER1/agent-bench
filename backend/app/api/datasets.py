@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -109,10 +109,18 @@ def delete_dataset(ds_id: int, db: Session = Depends(get_db)) -> dict:
 
 # ---------- 样本 CRUD（草稿） ----------
 
-def _add_case(db: Session, draft: DatasetVersion, c: CaseIn) -> EvalCase:
+def _add_case(db: Session, draft: DatasetVersion, c: CaseIn, seq: int | None = None) -> EvalCase:
+    # seq 缺省用 SQL max 计算（查询触发 autoflush，pending 行也会计入）；
+    # 不能读 draft.cases 关系集合——未 flush/已缓存时它看不到新增行，会算出重复序号。
+    # 批量导入仍显式传 seq，省掉逐行查询。
+    if seq is None:
+        max_seq = db.scalar(
+            select(func.max(EvalCase.seq)).where(EvalCase.dataset_version_id == draft.id)
+        )
+        seq = (max_seq or 0) + 1
     case = EvalCase(
         dataset_version_id=draft.id,
-        seq=max([x.seq for x in draft.cases], default=0) + 1,
+        seq=seq,
         input=c.input, expected_output=c.expected_output,
         reference_context=c.reference_context,
         tools_spec=json.dumps(c.tools_spec, ensure_ascii=False),
@@ -182,8 +190,8 @@ def import_cases(ds_id: int, body: ImportIn, db: Session = Depends(get_db)) -> d
                 "to_import": len(dicts), "draft_existing": len(existing)}
     if summary["blockers"] > 0:
         raise HTTPException(422, {"message": "存在阻断问题，未导入", "quality": summary})
-    for c in body.cases:
-        _add_case(db, draft, c)
+    for offset, c in enumerate(body.cases, start=len(existing)):
+        _add_case(db, draft, c, seq=offset + 1)
     db.commit()
     qr = QualityReport(dataset_id=ds.id, triggered_by="import",
                        blockers=0, warnings=summary["warnings"],

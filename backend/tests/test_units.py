@@ -543,6 +543,43 @@ def test_build_llm_api_format_branches():
 
 # ---------- external_http 适配器 ----------
 
+def test_external_http_headless_and_task_usage():
+    """headless 配置必须随 chat 请求下发；task_usage 轮末终值优先于每调用 usage 快照。"""
+    import asyncio
+    import json
+
+    import httpx as _httpx
+    from app.agents.external_http import ExternalHttpAgent
+
+    bodies = []
+
+    def handler(request: _httpx.Request) -> _httpx.Response:
+        if request.url.path == "/api/sessions":
+            return _httpx.Response(200, json={"id": "s1"})
+        bodies.append(json.loads(request.content.decode("utf-8")))
+        # 两条每调用 usage 之后来一条轮末 task_usage：取数必须以终值为准（R4）
+        sse = (
+            'data: {"type":"token","text":"a"}\n\n'
+            'data: {"type":"usage","inputTokens":100,"outputTokens":5}\n\n'
+            'data: {"type":"usage","inputTokens":200,"outputTokens":9}\n\n'
+            'data: {"type":"task_usage","inputTokens":300,"outputTokens":14}\n\n'
+            'data: {"type":"done"}\n\n'
+        )
+        return _httpx.Response(200, text=sse)
+
+    agent = ExternalHttpAgent({
+        "base_url": "http://fake", "protocol": "learn_agent_sse",
+        "headless": True, "timeout": 5,
+    })
+    agent._client = _httpx.AsyncClient(transport=_httpx.MockTransport(handler))
+
+    out = asyncio.run(agent.run("hi"))
+
+    assert bodies and bodies[0].get("headless") is True, "headless 必须随 chat 请求下发"
+    assert out.token_usage == {"input": 300, "output": 14}, "task_usage 终值必须优先"
+    assert not out.error
+
+
 def test_external_http_session_permission_and_sse():
     """session_permission 配置：建会话后调用权限端点；SSE 解析 token/usage/tool_call。"""
     import httpx as _httpx
@@ -580,9 +617,47 @@ def test_external_http_session_permission_and_sse():
     assert not out.error
 
 
-# ---------- V3-M1：提示词护栏 + 归因聚合 ----------
+def test_import_case_seq_increment():
+    """批量导入 seq：显式传参生效且逐条递增；缺省路径单条追加续号。
 
-def test_prompt_agent_guardrail_always_applied():
+    回归：批量导入循环内新 add 的对象未 flush，draft.cases 关系集合看不到，
+    max(seq)+1 恒等于同一值 → 导入样本全部 seq=1（trace 文件名互相覆盖）。
+    """
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from app.api.datasets import _add_case
+    from app.models.base import Base
+    from app.models.dataset import Dataset, DatasetVersion, EvalCase
+    from app.schemas import CaseIn
+
+    eng = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    ds = Dataset(name="seq回归集")
+    db.add(ds)
+    db.flush()
+    draft = DatasetVersion(dataset_id=ds.id, version="draft")
+    db.add(draft)
+    db.flush()
+
+    cases = [CaseIn(input=f"问题{i}", expected_output=f"答案{i}（长度补齐到三十个字符以上以满足质检最小长度要求）")
+             for i in range(3)]
+    for offset, c in enumerate(cases):
+        _add_case(db, draft, c, seq=offset + 1)
+    db.flush()
+    seqs = db.scalars(select(EvalCase.seq).where(EvalCase.dataset_version_id == draft.id)).all()
+    assert sorted(seqs) == [1, 2, 3], f"批量导入 seq 必须逐条递增，实际 {seqs}"
+
+    _add_case(db, draft, CaseIn(input="追加一条", expected_output="同样补齐到三十个字符以上避免质检长度规则干扰"))
+    db.flush()
+    total, max_seq = db.query(EvalCase).count(), db.scalar(
+        select(EvalCase.seq).where(EvalCase.dataset_version_id == draft.id)
+        .order_by(EvalCase.seq.desc()).limit(1))
+    assert total == 4 and max_seq == 4, f"缺省路径应续号为 4，实际 total={total} max={max_seq}"
+    db.close()
+
+
+# ---------- V3-M1：提示词护栏 + 归因聚合 ----------def test_prompt_agent_guardrail_always_applied():
     """护栏对默认与自定义 system_prompt 都必须生效（防工具调用语法伪装）。"""
     from app.agents.prompt_agent import PromptAgent
 
