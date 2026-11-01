@@ -6,7 +6,7 @@ import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, errText } from '../api'
-import type { CompareResult, DatasetListItem, EvalRun, RunTokens, TokenRow } from '../types'
+import type { CompareResult, DatasetListItem, EvalRun, FindingsResponse, RunTokens, TokenRow } from '../types'
 import { StatusTag, fmtTime } from '../format'
 import Chart from '../components/Chart'
 
@@ -216,6 +216,75 @@ function ComparePanel({ runId }: { runId: number }) {
   )
 }
 
+// 归因发现页签：分组汇总 + 逐样本明细
+function FindingsPanel({ runId }: { runId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['run-findings', runId],
+    queryFn: () => api.get<FindingsResponse>(`/runs/${runId}/findings`),
+  })
+  if (isLoading || !data) return <Spin />
+  if (data.total === 0) {
+    return <Typography.Text type="secondary">该任务没有归因发现（全部样本通过或无需归因）。</Typography.Text>
+  }
+  return (
+    <>
+      <Card size="small" title={`失败模式（${data.summary.length} 类 / ${data.total} 条发现）`} style={{ marginBottom: 14 }}>
+        <Table
+          rowKey={(r) => `${r.layer}-${r.issue_code}`}
+          size="small"
+          pagination={false}
+          dataSource={data.summary}
+          columns={[
+            { title: '层级', dataIndex: 'layer', width: 90 },
+            { title: '问题码', dataIndex: 'issue_code', width: 240 },
+            { title: '次数', dataIndex: 'count', width: 80 },
+            { title: '最高严重度', dataIndex: 'severity', width: 110, render: (s: string) => s === 'high' ? <Tag color="red">{s}</Tag> : <Tag color="gold">{s}</Tag> },
+            { title: '修复建议', dataIndex: 'suggestion', ellipsis: true },
+          ]}
+        />
+      </Card>
+      <Card size="small" title="逐样本明细">
+        <Table<FindingItem>
+          rowKey={(r) => `${r.case_id}-${r.issue_code}`}
+          size="small"
+          pagination={{ pageSize: 10 }}
+          dataSource={data.items}
+          columns={[
+            { title: '#', dataIndex: 'seq', width: 50 },
+            { title: '层级', dataIndex: 'layer', width: 80 },
+            { title: '问题码', dataIndex: 'issue_code', width: 210 },
+            { title: '严重度', dataIndex: 'severity', width: 90, render: (s: string) => s === 'high' ? <Tag color="red">{s}</Tag> : <Tag color="gold">{s}</Tag> },
+            { title: '证据', dataIndex: 'evidence', ellipsis: true },
+            { title: '建议', dataIndex: 'suggestion', ellipsis: true },
+          ]}
+        />
+      </Card>
+    </>
+  )
+}
+
+// R6：P95 超时预算占用 >80% 时提示接近截断边界
+function TimeoutRiskBadge({ runId, enabled }: { runId: number; enabled: boolean }) {
+  const { data } = useQuery({
+    queryKey: ['report', runId],
+    queryFn: () => api.get<{ summary: { sides: { agg: { timeout_budget_used: number | null }[] } } }>(`/runs/${runId}/report`),
+    enabled,
+    retry: false,
+  })
+  const sides = data?.summary.sides
+  const used = (sides ?? []).map((s: { agg: { timeout_budget_used: number | null } }) => s.agg.timeout_budget_used ?? 0)
+  const risky = used.length ? Math.max(...used) : 0
+  if (!enabled || risky <= 0.8) return null
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginTop: 14 }}
+      message={`P95 已占用超时预算 ${Math.round(risky * 100)}%，接近截断边界`}
+    />
+  )
+}
+
 export default function RunDetail() {
   const { id } = useParams()
   const runId = Number(id)
@@ -305,6 +374,7 @@ export default function RunDetail() {
           )}
         </Card>
       )}
+      <TimeoutRiskBadge runId={runId} enabled={run.status === 'done' && !!run.report_id} />
     </>
   )
 
@@ -348,6 +418,7 @@ export default function RunDetail() {
           items={[
             { key: 'overview', label: '概览', children: overview },
             { key: 'tokens', label: 'Token 消耗', children: <TokenPanel runId={runId} /> },
+            { key: 'findings', label: '归因', children: <FindingsPanel runId={runId} /> },
             { key: 'compare', label: '升级对比', children: <ComparePanel runId={runId} /> },
           ]}
         />

@@ -1,0 +1,98 @@
+{
+ "grug-think|Prompt-Agent": {
+  "pass": 0.9,
+  "weighted": 4.737,
+  "hall": 0.1,
+  "p95": 4773,
+  "avg": 2053,
+  "dims": {
+   "accuracy": 4.4,
+   "safety": 5.0,
+   "fluency": 5.0,
+   "task_completion": 4.8,
+   "hallucination": 4.7
+  },
+  "tok": 25958,
+  "tool_calls": null
+ },
+ "GLM-5.2-Agent|Prompt-Agent": {
+  "pass": 0.8,
+  "weighted": 4.461,
+  "hall": 0.0,
+  "p95": 121436,
+  "avg": 55715,
+  "dims": {
+   "accuracy": 3.9,
+   "safety": 4.9,
+   "fluency": 5.0,
+   "task_completion": 4.4,
+   "hallucination": 4.5
+  },
+  "tok": 262221,
+  "tool_calls": null
+ },
+ "glm-5.2-coding|Prompt-Agent": {
+  "pass": 0.7,
+  "weighted": 4.119,
+  "hall": 0.0,
+  "p95": 271281,
+  "avg": 106218,
+  "dims": {
+   "accuracy": 3.6,
+   "safety": 5.0,
+   "fluency": 3.9,
+   "task_completion": 3.4,
+   "hallucination": 4.9
+  },
+  "tok": 382310,
+  "tool_calls": null
+ },
+ "grug-think|agent-atlas": {
+  "pass": 0.6,
+  "weighted": 4.561,
+  "hall": 0.1429,
+  "p95": 31202,
+  "avg": 11467,
+  "dims": {
+   "accuracy": 4.286,
+   "safety": 5.0,
+   "fluency": 4.714,
+   "task_completion": 4.571,
+   "hallucination": 4.429
+  },
+  "tok": 31165,
+  "tool_calls": null
+ },
+ "GLM-5.2-Agent|agent-atlas": {
+  "pass": 0.0,
+  "weighted": 3.379,
+  "hall": 0.2,
+  "p95": 60688,
+  "avg": 33126,
+  "dims": {
+   "accuracy": 3.0,
+   "safety": 5.0,
+   "fluency": 5.0,
+   "task_completion": 1.0,
+   "hallucination": 3.8
+  },
+  "tok": 116515,
+  "tool_calls": null
+ },
+ "glm-5.2-coding|agent-atlas": {
+  "pass": 0.0,
+  "weighted": 3.158,
+  "hall": 0.0,
+  "p95": 8281,
+  "avg": 7082,
+  "dims": {
+   "accuracy": 2.0,
+   "safety": 5.0,
+   "fluency": 3.5,
+   "task_completion": 1.0,
+   "hallucination": 5.0
+  },
+  "tok": 58593,
+  "tool_calls": null
+ }
+}

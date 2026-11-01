@@ -10,13 +10,14 @@ from sqlalchemy.orm import Session
 
 from statistics import mean
 
+from app.attribution.engine import summarize_findings
 from app.core.config import settings
 from app.core.db import get_db
 from app.evaluation.metrics import normalize_usage, significance, sum_usage
 from app.evaluation.pipeline import cancel_run, start_run
 from app.models import (
-    Agent, AgentVersion, CaseResult, DatasetVersion, Dimension, EvalCase, EvalRun,
-    ModelEntry, ModelProvider, Report, RunStatus,
+    Agent, AgentVersion, AttributionFinding, CaseResult, DatasetVersion, Dimension, EvalCase,
+    EvalRun, ModelEntry, ModelProvider, Report, RunStatus,
 )
 from app.schemas import ReplayIn, RunCreate
 
@@ -215,6 +216,32 @@ def replay_run(run_id: int, body: ReplayIn, background: BackgroundTasks, db: Ses
     db.commit()
     background.add_task(start_run, run.id)
     return {"id": run.id, "mode": run.mode}
+
+
+@router.get("/{run_id}/findings")
+def get_run_findings(run_id: int, db: Session = Depends(get_db)) -> dict:
+    """归因发现只读视图：按 (layer, issue_code) 分组汇总 + 逐样本明细。"""
+    r = db.get(EvalRun, run_id)
+    if not r:
+        raise HTTPException(404, "任务不存在")
+    rows = db.execute(
+        select(AttributionFinding, CaseResult, EvalCase)
+        .join(CaseResult, AttributionFinding.case_result_id == CaseResult.id)
+        .join(EvalCase, CaseResult.case_id == EvalCase.id)
+        .where(CaseResult.run_id == run_id)
+        .order_by(EvalCase.seq, AttributionFinding.id)
+    ).all()
+    flat, items = [], []
+    for f, res, case in rows:
+        flat.append({"layer": f.layer, "issue_code": f.issue_code,
+                     "severity": f.severity, "suggestion": f.suggestion})
+        items.append({
+            "seq": case.seq, "case_id": case.id, "agent_version_id": res.agent_version_id,
+            "status": res.status, "issue_code": f.issue_code, "layer": f.layer,
+            "severity": f.severity, "detail": f.detail, "evidence": f.evidence,
+            "suggestion": f.suggestion,
+        })
+    return {"summary": summarize_findings(flat), "total": len(items), "items": items}
 
 
 def _weighted_score(scores: list, weight_by: dict[str, float]) -> float | None:

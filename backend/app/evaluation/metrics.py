@@ -246,6 +246,11 @@ def aggregate(results: list[dict], dimensions: list[dict], threshold: float | No
         "dimension_stats": dim_stats,
         "latency_ms_avg": round(mean(latencies)) if latencies else None,
         "latency_ms_p95": round(percentile(latencies, 95)) if latencies else None,
+        # 超时预算占用率 = P95 / 实际可用超时（AGENT_TIMEOUT + 30s wait_for 余量）；>0.8 提示接近截断
+        "timeout_budget_used": (
+            round(percentile(latencies, 95) / ((settings.AGENT_TIMEOUT_SECONDS + 30) * 1000), 3)
+            if latencies else None
+        ),
         "token_input_avg": round(mean(tokens_in)) if tokens_in else None,
         "token_output_avg": round(mean(tokens_out)) if tokens_out else None,
     }

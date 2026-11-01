@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.agents.retrieval import BM25Store, tokenize
 from app.attribution.engine import analyze_case, detect_prompt_injection, summarize_findings
+from app.core.config import settings
 from app.evaluation.judge import _add_usage, _extract_json
 from app.evaluation.metrics import (
     aggregate, ab_compare, normalize_usage, paired_t_test, sum_usage, wilcoxon_test,
@@ -577,3 +578,44 @@ def test_external_http_session_permission_and_sse():
     assert out.token_usage == {"input": 11, "output": 7}
     assert out.intermediate[0]["type"] == "tool_call" and out.intermediate[0]["name"] == "bash"
     assert not out.error
+
+
+# ---------- V3-M1：提示词护栏 + 归因聚合 ----------
+
+def test_prompt_agent_guardrail_always_applied():
+    """护栏对默认与自定义 system_prompt 都必须生效（防工具调用语法伪装）。"""
+    from app.agents.prompt_agent import PromptAgent
+
+    default = PromptAgent({"model": None})
+    assert "没有可执行的工具环境" in default.system
+    assert "禁止输出任何形式的工具调用语法" in default.system
+    from app.agents.prompt_agent import DEFAULT_SYSTEM
+    assert default.system.startswith(DEFAULT_SYSTEM)
+
+    custom = PromptAgent({"system_prompt": "你是写作助手。", "model": None})
+    assert custom.system.startswith("你是写作助手。"), "自定义提示词应保留在前"
+    assert "禁止输出任何形式的工具调用语法" in custom.system, "护栏必须追加"
+
+
+def test_summarize_findings_groups_and_sorts():
+    """findings 聚合口径：按 (layer, issue_code) 分组、按次数降序。"""
+    rows = [
+        {"layer": "prompt", "issue_code": "A", "severity": "medium", "suggestion": "s"},
+        {"layer": "prompt", "issue_code": "A", "severity": "medium", "suggestion": "s"},
+        {"layer": "prompt", "issue_code": "B", "severity": "low", "suggestion": "s2"},
+        {"layer": "rag", "issue_code": "A", "severity": "low", "suggestion": "s3"},
+    ]
+    out = summarize_findings(rows)
+    assert out[0]["issue_code"] == "A" and out[0]["count"] == 2 and out[0]["layer"] == "prompt"
+    assert {(o["issue_code"], o["layer"]) for o in out} == {("A", "prompt"), ("B", "prompt"), ("A", "rag")}
+
+
+def test_aggregate_timeout_budget_field():
+    """timeout_budget_used = P95 / 可用超时，且超时长样本触发风险位。"""
+    dims = [{"code": "accuracy", "weight": 1.0}]
+    base = {"status": "ok", "scores": {"accuracy": 5.0}, "token_usage": {}, "tags": {}}
+    slow = dict(base, latency_ms=int(0.9 * (settings.AGENT_TIMEOUT_SECONDS + 30) * 1000))
+    agg = aggregate([slow], dims)
+    assert agg["timeout_budget_used"] is not None and agg["timeout_budget_used"] > 0.8
+    fast = aggregate([dict(base, latency_ms=100)], dims)
+    assert fast["timeout_budget_used"] is not None and fast["timeout_budget_used"] < 0.1

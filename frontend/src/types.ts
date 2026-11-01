@@ -279,6 +279,27 @@ export interface CompareResult {
   sides: CompareSide[]
 }
 
+// ---------- 归因发现 ----------
+
+export interface FindingItem {
+  seq: number
+  case_id: number
+  agent_version_id: number
+  status: string
+  issue_code: string
+  layer: string
+  severity: string
+  detail: string
+  evidence: string
+  suggestion: string
+}
+
+export interface FindingsResponse {
+  summary: { layer: string; issue_code: string; count: number; severity: string; suggestion: string }[]
+  total: number
+  items: FindingItem[]
+}
+
 // ---------- 模型注册表 ----------
 
 export interface ModelProviderInfo {
