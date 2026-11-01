@@ -122,3 +122,14 @@
 - agent-bench 侧的产出物验收维度 / 外部 Agent 工作区 fixture（P7 主体，另行计划）
 - 房产 Agent / Computer Use 路径的同类优化（M1-M3 落地后顺手回归）
 - 正式版发布流程
+
+## 七、回归速记（2026-11-01 第二轮：用户自实施 beta.2/beta.3 重测）
+
+- 用户在 agent-atlas 0.9.0-beta.2 自行实施了四处修复（reasoning-passthrough 含网关拒绝兜底、
+  headless+clarification_note、并发闸 429+Retry-After、task_usage），beta.3 增加路由决策层（默认关）。
+  agent-bench 适配器配套补了 429 重试。
+- 重测（Run 28/29/30，v3 数据集，并发 3×3）：工程层全部成立——0×400、0 挂起、429 由适配器消化；
+  agent-atlas 484 项单测全绿。
+- 分数：grug 4.303（+0.67）、GLM-5.2 2.515（持平）、coding 3.672（有效样本 +0.47，但 2/5 超时）。
+  **注意：P1-P6 优化项尚未实施**（代码中未见注记移位/analyze 分级/收尾契约），本轮提升属运行间方差，
+  结构性提升待 M1/M2 落地后重测验证。

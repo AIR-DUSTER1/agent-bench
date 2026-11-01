@@ -580,6 +580,50 @@ def test_external_http_headless_and_task_usage():
     assert not out.error
 
 
+def test_external_http_busy_429_retry():
+    """429 + Retry-After：建会话与 chat 流都按头重试，重试次数耗尽才报错。"""
+    import asyncio
+
+    import httpx as _httpx
+    from app.agents.external_http import ExternalHttpAgent
+
+    chat_calls = {"n": 0}
+
+    def handler(request: _httpx.Request) -> _httpx.Response:
+        if request.url.path == "/api/sessions":
+            return _httpx.Response(200, json={"id": "s1"})
+        chat_calls["n"] += 1
+        if chat_calls["n"] == 1:
+            return _httpx.Response(429, json={"error": "繁忙"}, headers={"Retry-After": "0"})
+        sse = (
+            'data: {"type":"token","text":"ok"}\n\n'
+            'data: {"type":"task_usage","inputTokens":10,"outputTokens":2}\n\n'
+            'data: {"type":"done"}\n\n'
+        )
+        return _httpx.Response(200, text=sse)
+
+    agent = ExternalHttpAgent({
+        "base_url": "http://fake", "protocol": "learn_agent_sse",
+        "headless": True, "timeout": 5,
+    })
+    agent._client = _httpx.AsyncClient(transport=_httpx.MockTransport(handler))
+
+    out = asyncio.run(agent.run("hi"))
+    assert chat_calls["n"] == 2, "429 后应重试一次"
+    assert out.output == "ok" and out.token_usage == {"input": 10, "output": 2}
+    assert not out.error
+
+    # 重试耗尽：始终 429 → 上抛为带状态码的错误（流水线落 CaseResult.error）
+    def always_busy(request: _httpx.Request) -> _httpx.Response:
+        return _httpx.Response(429, json={"error": "繁忙"}, headers={"Retry-After": "0"})
+
+    agent2 = ExternalHttpAgent({"base_url": "http://fake", "protocol": "learn_agent_sse",
+                                "busy_retries": 2, "timeout": 5})
+    agent2._client = _httpx.AsyncClient(transport=_httpx.MockTransport(always_busy))
+    out2 = asyncio.run(agent2.run("hi"))
+    assert "429" in (out2.error or ""), "重试耗尽后必须把 429 记为样本错误"
+
+
 def test_external_http_session_permission_and_sse():
     """session_permission 配置：建会话后调用权限端点；SSE 解析 token/usage/tool_call。"""
     import httpx as _httpx
