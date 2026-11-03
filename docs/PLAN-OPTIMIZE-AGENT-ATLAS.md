@@ -144,3 +144,15 @@
   beta.10 功能不在评测路径上，P1-P6 仍未实施。结构性差距（vs Prompt-Agent 0.4~1.2）待 M1/M2 落地。
 - 用户本地进行中的 composer-keymap 重构与 beta.10 的 /goal 改动在同名文件冲突，
   完整存于 agent-atlas `stash@{0}`，由用户自行决定合并方式。
+
+## 九、同步记录（2026-11-03：beta.10 → beta.15）
+
+- 远端 17 个提交：求职 Agent 执行流内化（四平台采集 + XLSX/HTML 交付）、长期记忆 v3
+  （事件存储 + 生命周期治理 + 语义召回）、Browser Use 插件与会话实时画面、找房 Agent
+  图文交付、工具调用分类展示、Goal 徽标键盘交互修复（beta.11）等。
+- 评测链路契约**向后兼容**：`headless`、`task_usage`、429+Retry-After、会话权限端点全部保留；
+  新增 `continuous` 为可选项，agent-bench 适配器无需改动。
+- 验证：tsc 零错误、547 项单测全绿、:3000 冒烟走完 analyze→agent→tools→agent→review 无错误。
+  本轮未跑数据集复测（新功能均不在评测路径上，且 P1-P6 仍未实施）。
+- 注意：beta.15 已移除 `src/cli-args.ts` 抽取与 `github-issues-dashboard` 脚本，
+  本地保留的同名未跟踪文件不再属于主线代码。
